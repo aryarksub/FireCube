@@ -6,7 +6,7 @@ import util.feds_util as feds_util
 import util.general_util as gen_util
 import util.processing_util as proc_util
 
-def process_single_fire(fid, era5_vars=[], verbose=False):
+def process_single_fire(fid, era5_vars=[], verbose=False, plot=False):
     gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = feds_util.read_1fire(fid)
     bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1)
     df_t = pd.to_datetime(gdf_fperim_rd.t)
@@ -15,7 +15,11 @@ def process_single_fire(fid, era5_vars=[], verbose=False):
     if len(era5_vars) != 0:
         if verbose: print(f'Getting ERA5 data for fire {fid}')
         
-        driver_era5(fid, era5_vars, df_t_with_buffer, bnds, gen_util.get_era5_nc_filename(fid))
+        driver_era5(
+            fid, era5_vars, df_t_with_buffer, bnds, 
+            gen_util.get_era5_nc_filename(fid), 
+            plot_types=gen_util.var_types if plot else []
+        )
     else:
         if verbose: print(f'No ERA5 variables specified; not getting ERA5 data for fire {fid}')
     
@@ -28,4 +32,4 @@ if __name__=='__main__':
 
     fid_to_use = zogg_id
     gen_util.create_dirs_for_fire(fid_to_use)
-    process_single_fire(fid_to_use, era5_vars, verbose=True)
+    process_single_fire(fid_to_use, era5_vars, verbose=True, plot=True)

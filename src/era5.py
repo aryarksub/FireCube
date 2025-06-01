@@ -116,23 +116,40 @@ def convert_era5_nc_to_tif(ds, fid, data_variables):
             for i in range(data.shape[0]):
                 dst.write(data[i, :, :], i + 1)
 
-def driver_era5(fid, vars, df_t, bounds, out_nc_file):
+def driver_era5(fid, vars, df_t, bounds, out_nc_file, plot_types=[]):
     download_ERA5_reg(fid, df_t, bounds, vars, out_nc_file)
     ds = xr.open_dataset(gen_util.get_era5_nc_filename(fid), engine='netcdf4')
     data_vars = get_data_vars_from_era5_dataset(ds)
     convert_era5_nc_to_tif(ds, fid, data_vars)
 
     for var in data_vars:
-        # Names correspond to original, converted, resampled subdirectories
         era5_var_fnames = [
             gen_util.get_temp_data_video_filename(
                 fid, var, dir_type=gen_util.dir_data,
                 data_source=gen_util.subdir_era5, var_type=vtype
             )
-            for vtype in [gen_util.subdir_type_original, gen_util.subdir_type_converted, gen_util.subdir_type_resample]
+            for vtype in gen_util.var_types
+        ]
+        era5_plot_fnames = [
+            gen_util.get_temp_data_video_filename(
+                fid, var, dir_type=gen_util.dir_videos,
+                data_source=gen_util.subdir_era5, var_type=vtype
+            )
+            for vtype in gen_util.var_types
         ]
 
         # Change CRS of original data to EPSG:5070
         proc_util.change_tif_crs(era5_var_fnames[0], era5_var_fnames[1], 'EPSG:5070')
         # Resample CRS-converted data to resolution of 9000m (9km)
         proc_util.resample_tif(era5_var_fnames[1], era5_var_fnames[2], 9000)
+
+        for plot_type in set(plot_types):
+            if plot_type in gen_util.var_types:
+                index = gen_util.var_types.index(plot_type)
+                gen_util.create_animation_plot_from_tif(
+                    in_tif=era5_var_fnames[index],
+                    out_file=era5_plot_fnames[index],
+                    start_time=gen_util.get_fire_start_from_ds(ds),
+                    mask=True,
+                    ignore_small_neg=False
+                )
