@@ -1,6 +1,9 @@
 from datetime import timedelta
 import numpy as np
 import pandas as pd
+import rasterio
+from rasterio.transform import Affine
+from rasterio.warp import calculate_default_transform, reproject, Resampling
 import xarray as xr
 
 def bufferbnds(bnds,res=0.005,bufgd=1):
@@ -82,3 +85,73 @@ def clean_xr_dataset_by_times(ds, start_time, end_time):
                                             'longitude': ds.longitude})
 
     return ds_filtered
+
+def change_tif_crs(in_tif_file, out_tif_file, new_crs):
+    with rasterio.open(in_tif_file) as src:
+        transform, width, height = calculate_default_transform(
+            src.crs, new_crs, src.width, src.height, *src.bounds
+        )
+        kwargs = src.meta.copy()
+        kwargs.update({
+            'crs': new_crs,
+            'transform': transform,
+            'width': width,
+            'height': height
+        })
+
+        with rasterio.open(out_tif_file, 'w', **kwargs) as dst:
+            for i in range(1, src.count + 1):  # assuming each time-band is a separate band
+                reproject(
+                    source=rasterio.band(src, i),
+                    destination=rasterio.band(dst, i),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs=new_crs,
+                    resampling=Resampling.nearest  # or bilinear/cubic etc.
+                )
+
+def resample_tif(in_tif, out_tif, target_res=None):
+    with rasterio.open(in_tif) as src:
+        transform = src.transform
+        crs = src.crs
+        width = src.width
+        height = src.height
+
+        # Current pixel size
+        pixel_width = transform.a
+        pixel_height = -transform.e
+
+        # Ensure CRS is in meters
+        if not crs.is_projected:
+            raise ValueError("CRS must be projected (e.g., UTM) to use meters.")
+        
+        if target_res is None:
+            target_res = round(pixel_width / 30) * 30
+
+        # Compute new width/height to avoid padding (crop if needed)
+        new_width = int((width * pixel_width) // target_res)
+        new_height = int((height * pixel_height) // target_res)
+
+        # New transform — same origin, new resolution
+        new_transform = Affine(
+            target_res, 0, transform.c,
+            0, -target_res, transform.f
+        )
+
+        # Write to new file
+        profile = src.profile
+        profile.update({
+            "height": new_height,
+            "width": new_width,
+            "transform": new_transform
+        })
+
+        with rasterio.open(out_tif, "w", **profile) as dst:
+            for i in range(1, src.count+1):
+                band_data = src.read(
+                    i,
+                    out_shape=(new_height, new_width),
+                    resampling=Resampling.bilinear
+                )
+                dst.write(band_data, i)

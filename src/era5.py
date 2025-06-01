@@ -2,6 +2,8 @@ import cdsapi as cds
 import numpy as np
 import os
 import pandas as pd
+import rasterio
+from rasterio.transform import from_origin
 import xarray as xr
 
 import util.general_util as gen_util
@@ -77,5 +79,60 @@ def download_ERA5_reg(fid, df_t, bnds, varERA5=['2m_temperature'], fnmERA5='./ER
     for file_path in file_list:
         os.remove(os.path.join(gen_util.dir_temp, file_path))
 
-def driver_era5(fid, vars, df_t, bounds, out_file):
-    download_ERA5_reg(fid, df_t, bounds, vars, out_file)
+def get_data_vars_from_era5_dataset(ds):
+    return set(ds.variables.keys()) - set(ds.coords)
+
+def convert_era5_nc_to_tif(ds, fid, data_variables):
+    for var in data_variables:
+        da = ds[var]
+        lat, lon = ds['latitude'].values, ds['longitude'].values
+
+        # Flip data if lat is ascending
+        if lat[0] < lat[-1]:
+            da = da.sel(latitude=lat[::-1])
+
+        data = da.transpose("valid_time", "latitude", "longitude").values
+
+        # Compute transform (assumes regular grid)
+        res_lat = abs(lat[1] - lat[0])
+        res_lon = abs(lon[1] - lon[0])
+        transform = from_origin(west=lon[0], north=lat[0], xsize=res_lon, ysize=res_lat)
+
+        # Write to multi-band GeoTIFF
+        with rasterio.open(
+            gen_util.get_temp_data_video_filename(
+                fid, var, dir_type=gen_util.dir_data, 
+                data_source=gen_util.subdir_era5, var_type=gen_util.subdir_type_original
+            ),
+            "w",
+            driver="GTiff",
+            height=data.shape[1],
+            width=data.shape[2],
+            count=data.shape[0],  # number of bands = time * step
+            dtype=data.dtype,
+            crs="EPSG:4326",
+            transform=transform,
+        ) as dst:
+            for i in range(data.shape[0]):
+                dst.write(data[i, :, :], i + 1)
+
+def driver_era5(fid, vars, df_t, bounds, out_nc_file):
+    download_ERA5_reg(fid, df_t, bounds, vars, out_nc_file)
+    ds = xr.open_dataset(gen_util.get_era5_nc_filename(fid), engine='netcdf4')
+    data_vars = get_data_vars_from_era5_dataset(ds)
+    convert_era5_nc_to_tif(ds, fid, data_vars)
+
+    for var in data_vars:
+        # Names correspond to original, converted, resampled subdirectories
+        era5_var_fnames = [
+            gen_util.get_temp_data_video_filename(
+                fid, var, dir_type=gen_util.dir_data,
+                data_source=gen_util.subdir_era5, var_type=vtype
+            )
+            for vtype in [gen_util.subdir_type_original, gen_util.subdir_type_converted, gen_util.subdir_type_resample]
+        ]
+
+        # Change CRS of original data to EPSG:5070
+        proc_util.change_tif_crs(era5_var_fnames[0], era5_var_fnames[1], 'EPSG:5070')
+        # Resample CRS-converted data to resolution of 9000m (9km)
+        proc_util.resample_tif(era5_var_fnames[1], era5_var_fnames[2], 9000)
