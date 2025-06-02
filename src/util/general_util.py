@@ -37,6 +37,9 @@ def create_dirs_for_fire(fid):
 def get_era5_nc_filename(fid):
     return os.path.join(dir_temp, dir_data, fid, subdir_era5, f'{fid}_era5_original.nc')
 
+def get_pyr_tar_filename(fid):
+    return os.path.join(dir_temp, dir_data, fid, subdir_pyr, f'{fid}_pyr_original.tar')
+
 def get_temp_data_video_filename(fid, var, dir_type='data', data_source='era5', var_type='original'):
     assert dir_type in [dir_data, dir_videos]
     assert data_source in data_sources

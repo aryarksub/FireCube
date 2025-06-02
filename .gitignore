@@ -1,5 +1,6 @@
-# Temporary storage for outputs
+# Temporary storage for outputs and notes file
 temp/
+notes.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

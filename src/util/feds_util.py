@@ -2,6 +2,7 @@ import geopandas as gpd
 import os
 
 dir_feds25 = os.path.join('inputData', 'FEDS2.5')
+feds_firelist = os.path.join('inputData', 'feds2.5_firelist.csv')
 
 def set_gdffile( Event_ID):
     """
