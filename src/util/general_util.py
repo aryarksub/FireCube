@@ -3,6 +3,7 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from pathlib import Path
 import rasterio
 from tqdm import tqdm
 
@@ -45,7 +46,7 @@ def get_temp_data_video_filename(fid, var, dir_type='data', data_source='era5', 
     assert data_source in data_sources
     assert var_type in var_types
     dir = os.path.join(dir_temp, dir_type, fid, data_source, var_type)
-    filename = f"{var}.{'tif' if dir_type == dir_data else '.mp4'}"
+    filename = f"{var}.{'tif' if dir_type == dir_data else 'mp4'}"
     return os.path.join(dir, filename)
 
 def to_datetime(date):
@@ -112,3 +113,8 @@ def create_animation_plot_from_tif(in_tif, out_file, start_time, mask=False, ign
     )
     ani.save(out_file, writer='ffmpeg', fps=10)
     plt.close()
+
+def get_tif_vars_in_dir(dir):
+    if type(dir) is str:
+        dir = Path(dir)
+    return [f.stem for f in dir.glob('*.tif')]

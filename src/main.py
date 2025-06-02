@@ -18,7 +18,8 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, verbose=False, plot=Fals
     center_lat = round((fire_row['lat0'].values[0] + fire_row['lat1'].values[0]) / 2, 2)
     center_lon = round((fire_row['lon0'].values[0] + fire_row['lon1'].values[0]) / 2, 2)
     fire_start = pd.Timestamp(df_t_with_buffer.min())
-    fire_hours = int( (df_t_with_buffer.max() - df_t_with_buffer.min()).total_seconds() / 3600) + 12
+    # Add 11 to go from mid-day to end of last day (hour 23:00 is the last time)
+    fire_hours = int( (df_t_with_buffer.max() - df_t_with_buffer.min()).total_seconds() / 3600) + 11
 
     if len(era5_vars) != 0:
         if verbose: print(f'Getting ERA5 data for fire {fid}')
@@ -33,7 +34,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, verbose=False, plot=Fals
 
     if do_pyr:
         if verbose: print(f'Getting Pyregence data for fire {fid}')
-        driver_pyregence(fid, (center_lat, center_lon), fire_start, fire_hours)
+        driver_pyregence(fid, (center_lat, center_lon), fire_start, fire_hours, plot_types=gen_util.var_types if plot else [])
     else:
         if verbose: print(f'Skipping Pyregence data for fire {fid}')
 
@@ -41,7 +42,7 @@ if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
 
-    era5_vars = [] #['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
+    era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
 
     fid_to_use = zogg_id
     gen_util.create_dirs_for_fire(fid_to_use)
