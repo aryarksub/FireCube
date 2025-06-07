@@ -1,6 +1,7 @@
 import pandas as pd
 
 from era5 import driver_era5
+from landfire import driver_landfire
 from pyregence.pyregence import driver_pyregence
 import util.feds_util as feds_util
 import util.general_util as gen_util
@@ -8,9 +9,9 @@ import util.processing_util as proc_util
 
 firelist = pd.read_csv(feds_util.feds_firelist, index_col=0)
 
-def process_single_fire(fid, era5_vars=[], do_pyr=True, verbose=False, plot=False):
+def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=False, plot=False):
     gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = feds_util.read_1fire(fid)
-    bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1)
+    bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1) # W,S,E,N
     df_t = pd.to_datetime(gdf_fperim_rd.t)
     df_t_with_buffer = proc_util.add_time_buffers(df_t)
 
@@ -38,12 +39,20 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, verbose=False, plot=Fals
     else:
         if verbose: print(f'Skipping Pyregence data for fire {fid}')
 
+    if len(lf_vars) != 0:
+        if verbose: print(f'Getting LANDFIRE data for fire {fid}')
+
+        driver_landfire(fid, lf_vars, bnds, fire_start, plot_types=gen_util.var_types if plot else [])
+    else:
+        if verbose: print(f'No LANDFIRE variables specified; not getting LANDFIRE data for fire {fid}')
+
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
 
-    era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
+    era5_vars = []#['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
+    lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40']
 
     fid_to_use = zogg_id
     gen_util.create_dirs_for_fire(fid_to_use)
-    process_single_fire(fid_to_use, era5_vars, do_pyr=True, verbose=True, plot=True)
+    process_single_fire(fid_to_use, era5_vars, do_pyr=False, lf_vars=lf_vars, verbose=True, plot=True)
