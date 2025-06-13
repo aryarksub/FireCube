@@ -4,6 +4,7 @@ import pandas as pd
 import rasterio
 from rasterio.transform import Affine
 from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.windows import from_bounds, Window
 import xarray as xr
 
 def bufferbnds(bnds,res=0.005,bufgd=1):
@@ -155,3 +156,28 @@ def resample_tif(in_tif, out_tif, target_res=None):
                     resampling=Resampling.bilinear
                 )
                 dst.write(band_data, i)
+
+def crop_tif_based_on_area(in_tif, out_tif, bounds):
+    with rasterio.open(in_tif) as src:
+        # Create a window from the bounding box
+        x1,y1,x2,y2 = bounds
+        window = from_bounds(x1, y1, x2, y2, transform=src.transform)
+        # Round window bounds up to make sure we get the entire fire area
+        window = Window(window.col_off, window.row_off, int(np.ceil(window.width)), int(np.ceil(window.height)))
+
+        # Read the data within the window
+        data = src.read(window=window)
+
+        # Compute the new transform for the cropped window
+        new_transform = src.window_transform(window)
+
+        # Define new metadata
+        new_meta = src.meta.copy()
+        new_meta.update({
+            "height": data.shape[1],
+            "width": data.shape[2],
+            "transform": new_transform
+        })
+
+        with rasterio.open(out_tif, 'w', **new_meta) as dst:
+            dst.write(data)

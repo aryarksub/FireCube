@@ -1,6 +1,10 @@
 # Temporary storage for outputs and notes file
 temp/
 notes.txt
+src/temp*
+
+# Make output data/visualization private (for now)
+output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

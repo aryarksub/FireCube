@@ -17,10 +17,23 @@ subdir_type_original = 'original'
 subdir_type_converted = 'converted'
 subdir_type_resample = 'resample'
 
+dir_output = 'output'
+dir_sum_vis = 'sum_vis' # summary visualizations
+dir_cubes = 'cubes' # top-level dir for cube outputs
+subdir_vis = 'vis' # visualizations
+subdir_lrc = 'low_res_climate' # era5 9000m
+subdir_hrc = 'high_res_climate' # pyregence 600m
+subdir_fuel_topo = 'fuel_topo' # pyregence 30m
+subdir_landfire = 'landfire' # landfire 30m
+subdir_firespread = 'fire_spread' # FEDS rasters 30m
+
 data_sources = [subdir_era5, subdir_pyr, subdir_lf]
 var_types = [subdir_type_original, subdir_type_converted, subdir_type_resample]
 
+data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_topo, subdir_landfire, subdir_firespread]
+
 def create_dirs_for_fire(fid):
+    # create folders in temporary (local) directory
     for top_dir in [dir_data, dir_videos]:
         top_path = os.path.join(dir_temp, top_dir)
         if not os.path.exists(top_path):
@@ -35,6 +48,16 @@ def create_dirs_for_fire(fid):
                 full_path2 = os.path.join(full_path, data_type_dir)
                 if not os.path.exists(full_path2):
                     os.makedirs(full_path2)
+
+    # create folders in output directory
+    for top_dir in [dir_sum_vis, dir_cubes]:
+        path = os.path.join(dir_output, top_dir)
+        if not os.path.exists(path):
+            os.makedirs(path)
+    for batch in data_batches:
+        batch_path = os.path.join(dir_output, dir_cubes, fid, batch)
+        if not os.path.exists(batch_path):
+            os.makedirs(batch_path)
 
 def get_era5_nc_filename(fid):
     return os.path.join(dir_temp, dir_data, fid, subdir_era5, f'{fid}_era5_original.nc')
@@ -51,6 +74,28 @@ def get_temp_data_video_filename(fid, var, dir_type='data', data_source='era5', 
     assert var_type in var_types
     dir = os.path.join(dir_temp, dir_type, fid, data_source, var_type)
     filename = f"{var}.{'tif' if dir_type == dir_data else 'mp4'}"
+    return os.path.join(dir, filename)
+
+def get_out_batch_for_tif(tif):
+    with rasterio.open(tif) as src:
+        res_x, res_y = src.transform.a, -src.transform.e
+        assert res_x == res_y
+    
+    if res_x == 9000 and subdir_era5 in tif:
+        return subdir_lrc
+    elif res_x == 600 and subdir_pyr in tif:
+        return subdir_hrc
+    elif res_x == 30 and subdir_pyr in tif:
+        return subdir_fuel_topo
+    elif subdir_lf in tif:
+        return subdir_landfire
+    else:
+        print(f'Resolution + Var combination for file {tif} is not supported')
+
+def get_output_data_filename(fid, var, batch_dir):
+    assert batch_dir in data_batches
+    dir = os.path.join(dir_output, dir_cubes, fid, batch_dir)
+    filename = f"{var}.{'mp4' if batch_dir == subdir_vis else 'tif'}"
     return os.path.join(dir, filename)
 
 def to_datetime(date):

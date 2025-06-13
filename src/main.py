@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 
 from era5 import driver_era5
@@ -52,14 +53,35 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=Fals
     else:
         if verbose: print(f'No LANDFIRE variables specified; not getting LANDFIRE data for fire {fid}')
 
+    # Convert gdf_perim to EPSG:5070
+    gdf_fperim_5070 = gdf_fperim_rd.to_crs('EPSG:5070') 
+    bounds_5070 = gdf_fperim_5070.total_bounds       
+
+    # Crop era5/pyr/lf tifs to just surround the fire perim
+    for data_source in gen_util.data_sources:
+        data_vars = gen_util.get_tif_vars_in_dir(
+            os.path.join(gen_util.dir_temp, gen_util.dir_data, fid, data_source, gen_util.subdir_type_resample)
+        )
+        for data_var in data_vars:
+            var_tif = gen_util.get_temp_data_video_filename(
+                fid, data_var, dir_type=gen_util.dir_data, data_source=data_source,
+                var_type=gen_util.subdir_type_resample
+            )
+            out_batch = gen_util.get_out_batch_for_tif(var_tif)
+            out_tif = gen_util.get_output_data_filename(
+                fid=fid, var=data_var, batch_dir=out_batch
+            )
+            proc_util.crop_tif_based_on_area(in_tif=var_tif, out_tif=out_tif, bounds=bounds_5070)
+
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
+    get_pyr_data = False
     lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40']
     plot_sources = []
 
     fid_to_use = zogg_id
     gen_util.create_dirs_for_fire(fid_to_use)
-    process_single_fire(fid_to_use, era5_vars, do_pyr=True, lf_vars=lf_vars, verbose=True, plot=plot_sources)
+    process_single_fire(fid_to_use, era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, verbose=True, plot=plot_sources)
