@@ -99,7 +99,7 @@ def get_lf_layers_given_vars_and_year(var_names, year):
         elif var in ['EVT', 'FBFM13', 'FBFM40']:
             versions = version_lists[var]
             for ind in range(len(year_cutpoints)):
-                if year <= year_cutpoints[ind]:
+                if year-1 <= year_cutpoints[ind]:
                     layer_name = versions[ind]
                     break
             else:
