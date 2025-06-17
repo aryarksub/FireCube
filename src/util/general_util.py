@@ -167,3 +167,85 @@ def get_tif_vars_in_dir(dir):
     if type(dir) is str:
         dir = Path(dir)
     return [f.stem for f in dir.glob('*.tif')]
+
+def create_multi_animation_from_tifs(in_tifs, out_file, start_time):
+    def get_data_and_extent(tif):
+        with rasterio.open(tif) as src:
+            extent = get_extent(src.profile)
+            if src.count == 1:
+                data = src.read(1)[np.newaxis, ...]  # shape (1, H, W)
+            else:
+                data = src.read()  # shape (bands, H, W)
+        return data, extent
+    
+    def grid_layout(n, num_cols=4):
+        return int(np.ceil(n / num_cols)), int(num_cols)
+    
+    def get_vmin_vmax(data, mask=False, ignore_small_neg=False):
+        condition = np.ones_like(data, dtype=bool)
+        # If masking to ignore nan and zero values
+        if mask:
+            condition &= ~np.isnan(data)
+            condition &= data != 0
+        # If masking to ignore small negative values
+        if ignore_small_neg:
+            condition &= data >= -500
+        masked_data = data[condition]
+
+        vmin = np.min(masked_data) if len(masked_data) != 0 else 0
+        vmax = np.max(masked_data) if len(masked_data) != 0 else 1
+
+        return vmin, vmax
+    
+    all_data = []
+    all_extents = []
+    max_t = 0
+    for tif in in_tifs:
+        data, extent = get_data_and_extent(tif)
+        all_data.append(data)
+        all_extents.append(extent)
+        max_t = max(max_t, data.shape[0]) # number of bands or 1
+
+    base  = start_time
+    times = [base + timedelta(hours=i) for i in range(max_t)]
+    
+    num_plots = len(all_data)
+    num_rows, num_cols = grid_layout(num_plots, num_cols=4)
+
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(4*num_cols, 4*num_rows))
+    fig.subplots_adjust(wspace=0.6, hspace=0.5)  # increase spacing
+
+    axes = np.array(axes).reshape(-1)  # flatten in case of 1D
+    images = []
+    colorbars = []
+
+    for i, (ax,data,extent) in enumerate(zip(axes, all_data, all_extents)):
+        vmin, vmax = get_vmin_vmax(data, mask=True, ignore_small_neg=True)
+        im = ax.imshow(data[0], cmap='viridis', vmin=vmin, vmax=vmax, extent=extent, origin='upper')
+        images.append(im)
+        cb = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        colorbars.append(cb)
+        ax.set_title(f"{os.path.basename(in_tifs[i]).replace('.tif', '')} - Time {times[0]}")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+    
+    # Hide unused subplots
+    for j in range(num_plots, len(axes)):
+        axes[j].axis('off')
+
+    def update(frame):
+        for i, data in enumerate(all_data):
+            t = frame if frame < data.shape[0] else data.shape[0] - 1
+            images[i].set_data(data[t])
+            axes[i].set_title(f"{os.path.basename(in_tifs[i]).replace('.tif', '')} - Time: {times[frame]}")
+        return images
+
+    ani = animation.FuncAnimation(fig, update, frames=max_t, interval=300, blit=False)
+    ani.save(out_file, writer='ffmpeg', fps=10)
+    plt.close()
+
+def create_multi_animation_for_dir(dir, out_file, start_time):
+    tif_files = [
+        os.path.join(dir, f) for f in os.listdir(dir) if f.endswith(".tif")
+    ]
+    create_multi_animation_from_tifs(tif_files, out_file, start_time)

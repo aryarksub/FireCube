@@ -58,6 +58,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=Fals
     bounds_5070 = gdf_fperim_5070.total_bounds       
 
     # Crop era5/pyr/lf tifs to just surround the fire perim
+    all_variable_output_tifs = []
     for data_source in gen_util.data_sources:
         data_vars = gen_util.get_tif_vars_in_dir(
             os.path.join(gen_util.dir_temp, gen_util.dir_data, fid, data_source, gen_util.subdir_type_resample)
@@ -71,7 +72,22 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=Fals
             out_tif = gen_util.get_output_data_filename(
                 fid=fid, var=data_var, batch_dir=out_batch
             )
+            all_variable_output_tifs.append(out_tif)
             proc_util.crop_tif_based_on_area(in_tif=var_tif, out_tif=out_tif, bounds=bounds_5070)
+
+    for batch in gen_util.data_batches:
+        if batch != gen_util.subdir_vis and batch != gen_util.subdir_firespread: # fire spread rasters (FEDS) not supported yet
+            gen_util.create_multi_animation_for_dir(
+                os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, batch),
+                gen_util.get_output_data_filename(fid, batch, gen_util.subdir_vis),
+                fire_start
+            )
+    
+    gen_util.create_multi_animation_from_tifs(
+        all_variable_output_tifs,
+        os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, gen_util.subdir_vis, 'all.mp4'),
+        start_time=fire_start
+    )
 
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
