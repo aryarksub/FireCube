@@ -45,18 +45,30 @@ def clean_xr_dataset_by_times(ds, start_time, end_time):
     step_vals = ds['step'].values
     valid_times = ds['valid_time'].values
 
-    records = [
-        {'time_idx': i, 'step_idx': j,
-        'time': time_vals[i], 'step': step_vals[j], 'valid_time': valid_times[i, j]}
-        for i in range(len(time_vals)) for j in range(len(step_vals))
-    ]
+    records = []
+    for i in range(len(time_vals)):
+        for j in range(len(step_vals)):
+            vt = valid_times[i, j]
+            # Filter to only valid_time within [start_time, end_time]
+            if start_time <= vt <= end_time:
+                is_valid = True
+                for var in ds.data_vars:
+                    val = ds[var].isel(time=i, step=j).values
+                    if np.isnan(val).any():
+                        is_valid = False
+                        break
+                if is_valid:
+                    records.append({
+                        'time_idx': i,
+                        'step_idx': j,
+                        'time': time_vals[i],
+                        'step': step_vals[j],
+                        'valid_time': vt
+                    })
 
     df = pd.DataFrame(records)
 
-    # Filter to only valid_time within [start_time, end_time]
-    df = df[(df['valid_time'] >= start_time) & (df['valid_time'] <= end_time)]
-
-    # Drop duplicates, keeping the first (i.e., earliest forecast)
+    # Drop duplicates, keeping the first with data (i.e., earliest forecast without NaN data)
     df = df.sort_values(['valid_time', 'time'])  # ensures earliest forecast is kept
     df = df.drop_duplicates(subset='valid_time', keep='first')
 

@@ -10,7 +10,7 @@ import util.processing_util as proc_util
 
 firelist = pd.read_csv(feds_util.feds_firelist, index_col=0)
 
-def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=False, plot=[]):
+def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=False, plot=[], multi_plot=False):
     gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = feds_util.read_1fire(fid)
     bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1) # W,S,E,N
     df_t = pd.to_datetime(gdf_fperim_rd.t)
@@ -75,26 +75,27 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=Fals
             all_variable_output_tifs.append(out_tif)
             proc_util.crop_tif_based_on_area(in_tif=var_tif, out_tif=out_tif, bounds=bounds_5070)
 
-    for batch in gen_util.data_batches:
-        if batch != gen_util.subdir_vis and batch != gen_util.subdir_firespread: # fire spread rasters (FEDS) not supported yet
-            gen_util.create_multi_animation_for_dir(
-                os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, batch),
-                gen_util.get_output_data_filename(fid, batch, gen_util.subdir_vis),
-                fire_start
-            )
-    
-    gen_util.create_multi_animation_from_tifs(
-        all_variable_output_tifs,
-        os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, gen_util.subdir_vis, 'all.mp4'),
-        start_time=fire_start
-    )
+    if multi_plot:
+        for batch in gen_util.data_batches:
+            if batch != gen_util.subdir_vis and batch != gen_util.subdir_firespread: # fire spread rasters (FEDS) not supported yet
+                gen_util.create_multi_animation_for_dir(
+                    os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, batch),
+                    gen_util.get_output_data_filename(fid, batch, gen_util.subdir_vis),
+                    fire_start
+                )
+        
+        gen_util.create_multi_animation_from_tifs(
+            all_variable_output_tifs,
+            os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, gen_util.subdir_vis, 'all.mp4'),
+            start_time=fire_start
+        )
 
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
-    get_pyr_data = False
+    get_pyr_data = True
     lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40']
     plot_sources = []
 
