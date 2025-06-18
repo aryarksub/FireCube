@@ -58,32 +58,22 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=Fals
     bounds_5070 = gdf_fperim_5070.total_bounds       
 
     # Crop era5/pyr/lf tifs to just surround the fire perim
-    all_variable_output_tifs = []
-    for data_source in gen_util.data_sources:
-        data_vars = gen_util.get_tif_vars_in_dir(
-            os.path.join(gen_util.dir_temp, gen_util.dir_data, fid, data_source, gen_util.subdir_type_resample)
-        )
-        for data_var in data_vars:
-            var_tif = gen_util.get_temp_data_video_filename(
-                fid, data_var, dir_type=gen_util.dir_data, data_source=data_source,
-                var_type=gen_util.subdir_type_resample
-            )
-            out_batch = gen_util.get_out_batch_for_tif(var_tif)
-            out_tif = gen_util.get_output_data_filename(
-                fid=fid, var=data_var, batch_dir=out_batch
-            )
-            all_variable_output_tifs.append(out_tif)
-            proc_util.crop_tif_based_on_area(in_tif=var_tif, out_tif=out_tif, bounds=bounds_5070)
+    all_variable_input_tifs, all_variable_output_tifs = gen_util.get_all_var_and_output_tifs_for_fire(fid)
+    proc_util.center_and_crop_tifs_to_same_area(all_variable_input_tifs, all_variable_output_tifs, bounds_5070)
 
     if multi_plot:
         for batch in gen_util.data_batches:
             if batch != gen_util.subdir_vis and batch != gen_util.subdir_firespread: # fire spread rasters (FEDS) not supported yet
+                if verbose:
+                    print(f'Generating plot for batch {batch} - fire {fid}')
                 gen_util.create_multi_animation_for_dir(
                     os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, batch),
                     gen_util.get_output_data_filename(fid, batch, gen_util.subdir_vis),
                     fire_start
                 )
         
+        if verbose:
+            print(f'Generating plot for all variables - fire {fid}')
         gen_util.create_multi_animation_from_tifs(
             all_variable_output_tifs,
             os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, gen_util.subdir_vis, 'all.mp4'),
@@ -94,11 +84,13 @@ if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
 
-    era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
-    get_pyr_data = True
-    lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40']
+    era5_vars = []#['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
+    get_pyr_data = False
+    lf_vars = []#['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40']
     plot_sources = []
 
     fid_to_use = zogg_id
     gen_util.create_dirs_for_fire(fid_to_use)
-    process_single_fire(fid_to_use, era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, verbose=True, plot=plot_sources)
+    process_single_fire(
+        fid_to_use, era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, verbose=True, plot=plot_sources, multi_plot=False
+    )

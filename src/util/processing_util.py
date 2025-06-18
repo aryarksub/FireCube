@@ -193,3 +193,40 @@ def crop_tif_based_on_area(in_tif, out_tif, bounds):
 
         with rasterio.open(out_tif, 'w', **new_meta) as dst:
             dst.write(data)
+
+def get_coarsest_resolution(tifs):
+    max_res = 0
+    for tif in tifs:
+        with rasterio.open(tif) as src:
+            res_x, res_y = src.res
+            assert res_x == res_y
+            max_res = max(max_res, res_x)
+    return max_res
+
+def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
+    assert len(in_tifs) == len(out_tifs) and len(bounds) == 4
+
+    x1,y1,x2,y2 = bounds
+    center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+    coarsest_res = get_coarsest_resolution(in_tifs)
+
+    # Use coarsest tif to determine number of pixels required to cover bounds
+    width_m = x2 - x1   # width in meters
+    height_m = y2 - y1  # height in meters
+
+    # Padding needed in each direction to get dimensions that are a multiple of coarsest_res
+    pad_x = coarsest_res - (width_m % coarsest_res) if width_m % coarsest_res != 0 else 0
+    pad_y = coarsest_res - (height_m % coarsest_res) if height_m % coarsest_res != 0 else 0
+
+    # Dimensions for output in meters (multiple of coarsest_res)
+    final_width_m = width_m + pad_x
+    final_height_m = height_m + pad_y
+
+    # Bounding box for output
+    half_width = final_width_m / 2
+    half_height = final_height_m / 2
+    final_x1, final_x2 = center_x - half_width, center_x + half_width
+    final_y1, final_y2 = center_y - half_height, center_y + half_height
+
+    for (in_tif, out_tif) in zip(in_tifs, out_tifs):
+        crop_tif_based_on_area(in_tif, out_tif, (final_x1, final_y1, final_x2, final_y2))

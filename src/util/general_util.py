@@ -98,6 +98,27 @@ def get_output_data_filename(fid, var, batch_dir):
     filename = f"{var}.{'mp4' if batch_dir == subdir_vis else 'tif'}"
     return os.path.join(dir, filename)
 
+def get_all_var_and_output_tifs_for_fire(fid):
+    var_tifs = []
+    out_tifs = []
+    for data_source in data_sources:
+        data_vars = get_tif_vars_in_dir(
+            os.path.join(dir_temp, dir_data, fid, data_source, subdir_type_resample)
+        )
+        for data_var in data_vars:
+            var_tif = get_temp_data_video_filename(
+                fid, data_var, dir_type=dir_data, data_source=data_source,
+                var_type=subdir_type_resample
+            )
+            var_tifs.append(var_tif)
+
+            out_batch = get_out_batch_for_tif(var_tif)
+            out_tif = get_output_data_filename(
+                fid=fid, var=data_var, batch_dir=out_batch
+            )
+            out_tifs.append(out_tif)
+    return var_tifs, out_tifs
+
 def to_datetime(date):
     """
     Converts a numpy datetime64 object to a python datetime object 
