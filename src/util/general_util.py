@@ -13,6 +13,7 @@ dir_videos = 'videos'
 subdir_era5 = 'era5'
 subdir_pyr = 'pyr'
 subdir_lf = 'lf'
+subdir_feds = 'feds'
 subdir_type_original = 'original'
 subdir_type_converted = 'converted'
 subdir_type_resample = 'resample'
@@ -25,9 +26,9 @@ subdir_lrc = 'low_res_climate' # era5 9000m
 subdir_hrc = 'high_res_climate' # pyregence 600m
 subdir_fuel_topo = 'fuel_topo' # pyregence 30m
 subdir_landfire = 'landfire' # landfire 30m
-subdir_firespread = 'fire_spread' # FEDS rasters 30m
+subdir_firespread = 'fire_spread' # FEDS rasters 300m
 
-data_sources = [subdir_era5, subdir_pyr, subdir_lf]
+data_sources = [subdir_era5, subdir_pyr, subdir_lf, subdir_feds]
 var_types = [subdir_type_original, subdir_type_converted, subdir_type_resample]
 
 data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_topo, subdir_landfire, subdir_firespread]
@@ -89,6 +90,8 @@ def get_out_batch_for_tif(tif):
         return subdir_fuel_topo
     elif subdir_lf in tif:
         return subdir_landfire
+    elif subdir_feds in tif:
+        return subdir_firespread
     else:
         print(f'Resolution + Var combination for file {tif} is not supported')
 
@@ -98,10 +101,13 @@ def get_output_data_filename(fid, var, batch_dir):
     filename = f"{var}.{'mp4' if batch_dir == subdir_vis else 'tif'}"
     return os.path.join(dir, filename)
 
-def get_all_var_and_output_tifs_for_fire(fid):
+def get_all_var_and_output_tifs_for_fire(fid, exclude=[]):
     var_tifs = []
     out_tifs = []
     for data_source in data_sources:
+        # Do not get tifs for excluded data sources
+        if data_source in exclude:
+            continue
         data_vars = get_tif_vars_in_dir(
             os.path.join(dir_temp, dir_data, fid, data_source, subdir_type_resample)
         )

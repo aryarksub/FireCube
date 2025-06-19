@@ -10,11 +10,15 @@ import util.processing_util as proc_util
 
 firelist = pd.read_csv(feds_util.feds_firelist, index_col=0)
 
-def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=False, plot=[], multi_plot=False):
+def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False):
     gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = feds_util.read_1fire(fid)
     bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1) # W,S,E,N
     df_t = pd.to_datetime(gdf_fperim_rd.t)
     df_t_with_buffer = proc_util.add_time_buffers(df_t)
+
+    # Convert gdf_perim to EPSG:5070
+    gdf_fperim_5070 = gdf_fperim_rd.to_crs('EPSG:5070') 
+    bounds_5070 = gdf_fperim_5070.total_bounds
 
     fire_row = firelist[firelist['Event_ID'] == fid]
     center_lat = round((fire_row['lat0'].values[0] + fire_row['lat1'].values[0]) / 2, 2)
@@ -51,19 +55,30 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=Fals
             plot_types=gen_util.var_types if gen_util.subdir_lf in plot else []
         )
     else:
-        if verbose: print(f'No LANDFIRE variables specified; not getting LANDFIRE data for fire {fid}')
+        if verbose: print(f'No LANDFIRE variables specified; not getting LANDFIRE data for fire {fid}')       
 
-    # Convert gdf_perim to EPSG:5070
-    gdf_fperim_5070 = gdf_fperim_rd.to_crs('EPSG:5070') 
-    bounds_5070 = gdf_fperim_5070.total_bounds       
+    # Crop era5/pyr/lf tifs to just surround the fire perim (ignore FEDS data for cropping since it needs to be padded)
+    non_feds_input_tifs, non_feds_output_tifs = gen_util.get_all_var_and_output_tifs_for_fire(
+        fid, exclude=[gen_util.subdir_feds]
+    )
+    proc_util.center_and_crop_tifs_to_same_area(non_feds_input_tifs, non_feds_output_tifs, bounds_5070)
 
-    # Crop era5/pyr/lf tifs to just surround the fire perim
+    # Bounding box for all variable/layer tifs is the same, so we can just take the box for the first tif
+    largest_var_tif_bounds = proc_util.get_tif_bounds(non_feds_output_tifs[0])
+
+    if do_feds:
+        if verbose: print(f'Getting/Rasterizing FEDS data for fire {fid}')
+        feds_util.driver_feds(
+            fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, plot_orig=False
+        )
+    else:
+        if verbose: print(f'Skipping FEDS data for fire {fid}')
+
     all_variable_input_tifs, all_variable_output_tifs = gen_util.get_all_var_and_output_tifs_for_fire(fid)
-    proc_util.center_and_crop_tifs_to_same_area(all_variable_input_tifs, all_variable_output_tifs, bounds_5070)
 
-    if multi_plot:
+    if batch_plot:
         for batch in gen_util.data_batches:
-            if batch != gen_util.subdir_vis and batch != gen_util.subdir_firespread: # fire spread rasters (FEDS) not supported yet
+            if batch != gen_util.subdir_vis:
                 if verbose:
                     print(f'Generating plot for batch {batch} - fire {fid}')
                 gen_util.create_multi_animation_for_dir(
@@ -71,7 +86,8 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], verbose=Fals
                     gen_util.get_output_data_filename(fid, batch, gen_util.subdir_vis),
                     fire_start
                 )
-        
+
+    if all_plot: 
         if verbose:
             print(f'Generating plot for all variables - fire {fid}')
         gen_util.create_multi_animation_from_tifs(
@@ -87,10 +103,12 @@ if __name__=='__main__':
     era5_vars = []#['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = False
     lf_vars = []#['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40']
+    rasterize_feds = False
     plot_sources = []
 
     fid_to_use = zogg_id
     gen_util.create_dirs_for_fire(fid_to_use)
     process_single_fire(
-        fid_to_use, era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, verbose=True, plot=plot_sources, multi_plot=False
+        fid_to_use, era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
+        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False
     )

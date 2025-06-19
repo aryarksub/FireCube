@@ -2,7 +2,8 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 import rasterio
-from rasterio.transform import Affine
+from rasterio.coords import BoundingBox
+from rasterio.transform import Affine, from_origin
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 import xarray as xr
@@ -230,3 +231,49 @@ def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
 
     for (in_tif, out_tif) in zip(in_tifs, out_tifs):
         crop_tif_based_on_area(in_tif, out_tif, (final_x1, final_y1, final_x2, final_y2))
+
+def pad_tif_to_bounds(in_tif, out_tif, bounds):
+    with rasterio.open(in_tif) as src:
+        original_data = src.read()
+        original_bounds = src.bounds
+        dtype = src.dtypes[0]
+        count = src.count
+
+        xres, yres = src.res
+        assert xres == yres
+
+        xmin, ymin, xmax, ymax = bounds
+        bounds = BoundingBox(left=xmin, bottom=ymin, right=xmax, top=ymax)
+
+        # Compute new width and height in pixels
+        new_width = int(np.ceil((bounds.right - bounds.left) / xres))
+        new_height = int(np.ceil((bounds.top - bounds.bottom) / yres))
+
+        # Compute new transform for the new bounding box
+        new_transform = from_origin(bounds.left, bounds.top, xres, yres)
+
+        # Create empty array filled with zeros
+        padded_data = np.zeros((count, new_height, new_width), dtype=dtype)
+
+        # Compute pixel offsets to place original data
+        col_offset = int((original_bounds.left - bounds.left) / xres)
+        row_offset = int((bounds.top - original_bounds.top) / yres)
+
+        # Copy original data into the padded array
+        padded_data[:, row_offset:row_offset + src.height, col_offset:col_offset + src.width] = original_data
+
+        # Update metadata
+        profile = src.profile.copy()
+        profile.update({
+            'height': new_height,
+            'width': new_width,
+            'transform': new_transform
+        })
+
+        with rasterio.open(out_tif, 'w', **profile) as dst:
+            dst.write(padded_data)
+
+def get_tif_bounds(tif):
+    with rasterio.open(tif) as src:
+        bounds = src.bounds
+        return np.array([bounds.left, bounds.bottom, bounds.right, bounds.top])
