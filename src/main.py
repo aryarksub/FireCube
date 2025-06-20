@@ -11,7 +11,16 @@ import util.processing_util as proc_util
 firelist = pd.read_csv(feds_util.feds_firelist, index_col=0)
 
 def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False):
+    if verbose:
+        print(f'Processing fire {fid}')
+    
     gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = feds_util.read_1fire(fid)
+    if gdf_fperim_rd is None:
+        if verbose:
+            print(f'FEDS file for fire {fid} does not exist - no processing will be done')
+        return
+    
+    gen_util.create_dirs_for_fire(fid)
     bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1) # W,S,E,N
     df_t = pd.to_datetime(gdf_fperim_rd.t)
     df_t_with_buffer = proc_util.add_time_buffers(df_t)
@@ -111,20 +120,42 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         verbose=verbose
     )
 
+def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False):
+    if len(fid_list) == 0 and fid_file is None:
+        if verbose:
+            print('No FIDs given - no processing will be done')
+        return
+    
+    if len(fid_list) > 0:
+        if verbose:
+            print('Processing fires given in list argument')
+        for fid in fid_list:
+            process_single_fire(fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate)
+    else:
+        if verbose:
+            print('Processing fires given in file-path argument')
+        try:
+            with open(fid_file, 'r', encoding='utf-8') as file:
+                for line in file:
+                    fid = line.strip()
+                    process_single_fire(fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate)
+        except:
+            if verbose:
+                print(f'Error when reading file {fid_file} - no processing will be done')
+
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
 
-    era5_vars = []#['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
-    get_pyr_data = False
-    lf_vars = []#['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40']
-    rasterize_feds = False
+    era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
+    get_pyr_data = True
+    lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40']
+    rasterize_feds = True
     plot_sources = []
 
-    fid_to_use = zogg_id
-    gen_util.create_dirs_for_fire(fid_to_use)
-    process_single_fire(
-        fid_to_use, era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
+    fids_to_use = [zogg_id]
+    process_multiple_fires(
+        fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
         verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=gen_util.data_sources,
         del_intermediate=False
     )
