@@ -10,7 +10,7 @@ import util.processing_util as proc_util
 
 firelist = pd.read_csv(feds_util.feds_firelist, index_col=0)
 
-def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False):
+def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False):
     gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = feds_util.read_1fire(fid)
     bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1) # W,S,E,N
     df_t = pd.to_datetime(gdf_fperim_rd.t)
@@ -61,6 +61,12 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     non_feds_input_tifs, non_feds_output_tifs = gen_util.get_all_var_and_output_tifs_for_fire(
         fid, exclude=[gen_util.subdir_feds]
     )
+    # If there are no output tifs, then stop processing
+    if len(non_feds_output_tifs) == 0:
+        if verbose:
+            print(f'No output TIFs were created - stopping processing for fire {fid}')
+        return
+
     proc_util.center_and_crop_tifs_to_same_area(non_feds_input_tifs, non_feds_output_tifs, bounds_5070)
 
     # Bounding box for all variable/layer tifs is the same, so we can just take the box for the first tif
@@ -96,6 +102,15 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
             start_time=fire_start
         )
 
+    gen_util.remove_temp_dir_files(
+        fid, 
+        del_dir_types=gen_util.dir_types,
+        del_data_sources=del_sources,
+        del_var_types=gen_util.var_types,
+        remove_intermediate=del_intermediate,
+        verbose=verbose
+    )
+
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
@@ -110,5 +125,6 @@ if __name__=='__main__':
     gen_util.create_dirs_for_fire(fid_to_use)
     process_single_fire(
         fid_to_use, era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
-        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False
+        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=gen_util.data_sources,
+        del_intermediate=False
     )

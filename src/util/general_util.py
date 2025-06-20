@@ -28,6 +28,7 @@ subdir_fuel_topo = 'fuel_topo' # pyregence 30m
 subdir_landfire = 'landfire' # landfire 30m
 subdir_firespread = 'fire_spread' # FEDS rasters 300m
 
+dir_types = [dir_data, dir_videos]
 data_sources = [subdir_era5, subdir_pyr, subdir_lf, subdir_feds]
 var_types = [subdir_type_original, subdir_type_converted, subdir_type_resample]
 
@@ -276,3 +277,36 @@ def create_multi_animation_for_dir(dir, out_file, start_time):
         os.path.join(dir, f) for f in os.listdir(dir) if f.endswith(".tif")
     ]
     create_multi_animation_from_tifs(tif_files, out_file, start_time)
+
+def remove_temp_dir_files(fid, del_dir_types=[], del_data_sources=[], del_var_types=[], remove_intermediate=False, verbose=False):
+    if verbose:
+        print(f"Deleting files with directory types {del_dir_types}, data sources {del_data_sources}, variable types {del_var_types} + with{'' if remove_intermediate else 'out'} removing intermediate files")
+
+    for dir_type in del_dir_types:
+        if dir_type not in dir_types:
+            continue
+        for data_source in del_data_sources:
+            if data_source not in data_sources:
+                continue
+            for var_type in del_var_types:
+                if var_type not in var_types:
+                    continue
+
+                # Remove all files in directory specified by dir_type, data_source, var_type
+                # This will remove all created tif files (for dir_data) and mp4 files (for dir_videos)
+                dir_path = os.path.join(dir_temp, dir_type, fid, data_source, var_type)
+                file_names = os.listdir(dir_path)
+                for fname in file_names:
+                    file_path = os.path.join(dir_path, fname)
+                    if os.path.isfile(file_path):
+                        os.remove(os.path.join(dir_path, fname))
+            
+            # If remove_intermediate, remove all files in the general dir (not based on var_type)
+            # This will remove the merged downloaded files (e.g. nc for era5, tar for pyr, zip for landfire)
+            if remove_intermediate:
+                dir_path = os.path.join(dir_temp, dir_type, fid, data_source)
+                file_names = os.listdir(dir_path)
+                for fname in file_names:
+                    file_path = os.path.join(dir_path, fname)
+                    if os.path.isfile(file_path):
+                        os.remove(os.path.join(dir_path, fname))
