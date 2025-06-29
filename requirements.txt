@@ -1,0 +1,11 @@
+cdsapi==0.7.6
+geopandas==1.0.1
+grpcio==1.71.0
+matplotlib==3.10.3
+numpy==1.24.0
+pandas==2.3.0
+protobuf==6.31.1
+rasterio==1.4.3
+Requests==2.32.4
+tqdm==4.66.2
+xarray==2024.7.0
