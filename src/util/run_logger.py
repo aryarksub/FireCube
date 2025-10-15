@@ -1,4 +1,3 @@
-# util/run_logger.py
 import os, csv, time, traceback
 from datetime import datetime
 
