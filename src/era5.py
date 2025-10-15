@@ -71,7 +71,7 @@ def download_ERA5_reg(fid, df_t, bnds, varERA5=['2m_temperature'], fnmERA5='./ER
 
     # merge all files into one netcdf file in the pre-set directory
     ds = xr.open_mfdataset(temp_file_prefix + '*.grib', engine='cfgrib')
-    ds_clean = proc_util.clean_xr_dataset_by_times(ds, np.datetime64('2020-09-27T00:00:00'), np.datetime64('2020-10-03T23:00:00'))
+    ds_clean = proc_util.clean_xr_dataset_by_times(ds, df_t.min(), df_t.max())
     ds_clean.to_netcdf(fnmERA5)
 
     # remove all temporary files

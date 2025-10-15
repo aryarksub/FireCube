@@ -12,12 +12,12 @@ LF_BASE_URL = "https://lfps.usgs.gov"
 LF_JOB_URL = f"{LF_BASE_URL}/api/job/submit"
 LF_STATUS_URL = f"{LF_BASE_URL}/api/job/status"
 
-def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=['ASP2020'], out_proj='102003', resample_res=300, redo=False):
+def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=['ASP2020'], out_proj='102003', resample_res=30, redo=False):
     if not redo and os.path.exists(out_file):
         return
 
-    # set the LF bounds for the region (use 0.1 degree resolution and 1-pixel buffer at the boundary)
-    LF_bounds = proc_util.bufferbnds(bounds, res=0.1, bufgd=1)
+    # set the LF bounds for the region (use 0.1 degree resolution and 2-pixel buffer at the boundary, to make sure to have >9km buffer even at high latitude of CONUS)
+    LF_bounds = proc_util.bufferbnds(bounds, res=0.1, bufgd=2)
 
     job_payload = {
         "Email": email,
@@ -104,6 +104,8 @@ def get_lf_layers_given_vars_and_year(var_names, year):
                     break
             else:
                 layer_name = latest_versions[var]
+        elif var in ['ROADS']:
+            layer_name = '240ROADS_23'
         else:
             print(f'Layer for {var} not in existing cases; will not be included in data download')
         layers.append(layer_name)
@@ -117,7 +119,7 @@ def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
 
     download_landfire_data(
         bounds=bounds, out_file=lf_zip_path,
-        layers=layers, out_proj="102003", resample_res=300, redo=False
+        layers=layers, out_proj="102003", resample_res=30, redo=False
     )
     split_tifs_in_zip(lf_zip_path, fid)
 
@@ -144,7 +146,7 @@ def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
         # Change CRS of original data to EPSG:5070
         proc_util.change_tif_crs(lf_var_fnames[0], lf_var_fnames[1], 'EPSG:5070')
         # Resample CRS-converted data to resolution defined in resample_tif (closest multiple of 30)
-        proc_util.resample_tif(lf_var_fnames[1], lf_var_fnames[2], target_res=None)
+        proc_util.resample_tif(lf_var_fnames[1], lf_var_fnames[2], target_res=None, catype=True)
 
         for plot_type in set(plot_types):
             if plot_type in gen_util.var_types:

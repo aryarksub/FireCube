@@ -125,7 +125,9 @@ def change_tif_crs(in_tif_file, out_tif_file, new_crs):
                     resampling=Resampling.nearest  # or bilinear/cubic etc.
                 )
 
-def resample_tif(in_tif, out_tif, target_res=None):
+def resample_tif(in_tif, out_tif, target_res=None, catype=False):
+    resample_method = Resampling.nearest if catype else Resampling.bilinear
+
     with rasterio.open(in_tif) as src:
         transform = src.transform
         crs = src.crs
@@ -166,7 +168,7 @@ def resample_tif(in_tif, out_tif, target_res=None):
                 band_data = src.read(
                     i,
                     out_shape=(new_height, new_width),
-                    resampling=Resampling.bilinear
+                    resampling=resample_method
                 )
                 dst.write(band_data, i)
 
@@ -218,6 +220,12 @@ def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
     # Padding needed in each direction to get dimensions that are a multiple of coarsest_res
     pad_x = coarsest_res - (width_m % coarsest_res) if width_m % coarsest_res != 0 else 0
     pad_y = coarsest_res - (height_m % coarsest_res) if height_m % coarsest_res != 0 else 0
+
+    # If the previously derived padding is smaller than 10% of the coarsest resolution, add a 100% coarsest resolution buffer in that direction.
+    if pad_x < coarsest_res / 10:   
+        pad_x += coarsest_res
+    if pad_y < coarsest_res / 10:
+        pad_y += coarsest_res
 
     # Dimensions for output in meters (multiple of coarsest_res)
     final_width_m = width_m + pad_x

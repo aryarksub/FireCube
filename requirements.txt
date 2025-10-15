@@ -1,7 +1,7 @@
 cdsapi==0.7.6
 geopandas==1.0.1
 grpcio==1.71.0
-matplotlib==3.10.3
+matplotlib==3.9.4
 numpy==1.24.0
 pandas==2.3.0
 protobuf==6.31.1
