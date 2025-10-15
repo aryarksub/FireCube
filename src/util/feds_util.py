@@ -2,6 +2,7 @@ from datetime import timedelta
 import geopandas as gpd
 import numpy as np
 import os
+import pandas as pd
 import rasterio
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds
@@ -10,6 +11,7 @@ import util.general_util as gen_util
 import util.processing_util as proc_util
 
 dir_feds25 = os.path.join('inputData', 'FEDS2.5')
+dir_firepix = os.path.join('inputData', 'firepix')
 feds_firelist = os.path.join('inputData', 'feds2.5_firelist.csv')
 
 def set_gdffile( Event_ID):
@@ -183,3 +185,122 @@ def driver_feds(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, nu
             gen_util.create_animation_plot_from_tif(
                 var_tif, var_vid, start_time=fire_start
             )
+
+def read_firepix_1fire(yr, fid):
+    """ Reads the fire pixel data for a specific year from the FEDS25 dataset. """
+
+    fnm = os.path.join(dir_firepix, 'Firepix_' + str(yr) + '.csv')
+    df = pd.read_csv(fnm, index_col=0, parse_dates=['t'])
+    
+    df_fp = df[(df.Event_ID == fid)]
+
+    return df_fp
+
+def get_gdf_firepix_t(df_fp, t, out_crs="epsg:4326"):
+        # extract FRP data for the current time step
+        df_fp_t = df_fp[(df_fp.t == t)]
+        df_fp_t['FRPden'] = df_fp_t['FRP'] / (df_fp_t['DT'] * df_fp_t['DS']) / 1e4  # FRP density in MW/m^2
+
+        # convert to GeoDataFrame (epsg:4326)
+        gdf_fp_t = gpd.GeoDataFrame(df_fp_t, geometry=gpd.points_from_xy(df_fp_t.Lon, df_fp_t.Lat, crs="epsg:4326"))
+
+        # create shapes for rasterization
+        gdf_fp_t = gdf_fp_t.to_crs(out_crs)
+
+        return gdf_fp_t
+
+def rasterize_frp_and_save_as_tif(gdf_fperim_rd, df_fp, out_tif, resolution, crs='EPSG:5070', start_time=None, end_time=None, num_hours=None):
+    # Convert gdf_fperim_rd (GeoDataFrame) to correct CRS and get width, height based on desired resolution
+    gdf_fperim_rd = gdf_fperim_rd.to_crs(crs)
+    minx, miny, maxx, maxy = gdf_fperim_rd.total_bounds
+    width = int((maxx - minx) / resolution)
+    height = int((maxy - miny) / resolution)
+    transform = from_bounds(minx, miny, maxx, maxy, width, height)
+
+    start_time = gdf_fperim_rd['t'].min() if start_time is None else start_time
+    # If num_hours is given, use that to generate times; otherwise, calculate num_hours based on end_time
+    if num_hours is None or num_hours == 0:
+        end_time = gdf_fperim_rd['t'].max() if end_time is None else end_time
+        num_hours = int( (end_time - start_time).total_seconds() / 3600)
+    gdf_times = set(gdf_fperim_rd.loc[gdf_fperim_rd.geometry.notnull(), 't'].unique())
+    time_range = [start_time + timedelta(hours=i) for i in range(num_hours+1)]
+
+    prev_non_null_df_time = None
+    rasterized_bands = []
+
+    # For each time, if there is FEDS data, use it for rasterization; otherwise, use previously used data (if it exists)
+    for t in time_range:
+        if t in gdf_times:
+            gdf_fp_t = get_gdf_firepix_t(df_fp, t, out_crs=crs)
+            prev_non_null_df_time = t
+        elif prev_non_null_df_time is not None:
+            gdf_fp_t = get_gdf_firepix_t(df_fp, prev_non_null_df_time, out_crs=crs)
+        else:
+            gdf_fp_t = None
+
+        # Rasterize the selected geometries; if no data, create an empty raster
+        if gdf_fp_t is not None and not gdf_fp_t.empty:
+            # shapes = ((geom, 1) for geom in df.geometry if geom is not None)
+            shapes = ((geom, value) for geom, value in zip(gdf_fp_t.geometry, gdf_fp_t['FRPden']))
+            raster = rasterize(
+                shapes,
+                out_shape=(height, width),
+                transform=transform,
+                fill=0,
+                all_touched=True,
+                dtype='float'
+            )
+        else:
+            raster = np.zeros((height, width), dtype='float')
+
+        rasterized_bands.append(raster)
+    
+    stacked_array = np.stack(rasterized_bands)
+    temp_tif_file = 'temp_rasterized_gdf.tif'
+    with rasterio.open(
+        temp_tif_file,
+        'w',
+        driver='GTiff',
+        height=stacked_array.shape[1],
+        width=stacked_array.shape[2],
+        count=stacked_array.shape[0],  # number of bands
+        dtype=stacked_array.dtype,
+        crs=crs,
+        transform=transform
+    ) as dst:
+        for i in range(stacked_array.shape[0]):
+            dst.write(stacked_array[i], i + 1)  # rasterio bands are 1-based
+
+    # Resample the tif to correct resolution in case the above procedure slightly shifts resolution
+    proc_util.resample_tif(temp_tif_file, out_tif, target_res=resolution)
+    os.remove(temp_tif_file)
+
+def driver_frp(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num_hours=None, plot_orig=False):
+    # read FEDS25MTBS
+    gdf_fperim_rd, _, _ = read_1fire(fid) # read FEDS25MTBS fire perimeter for a specific fire
+    if gdf_fperim_rd is None or gdf_fperim_rd.empty:
+        print(f"No fire perimeter data for {fid}, cannot process FRP.")
+        return
+    df_fp = read_firepix_1fire(gdf_fperim_rd.t.min().year, fid) # read FEDS25MTBS firepix data for a specific fire (all time steps)
+    var = 'frp'
+
+    var_tif = gen_util.get_temp_data_video_filename(
+        fid, var, dir_type=gen_util.dir_data, data_source=gen_util.subdir_frp, var_type=gen_util.subdir_type_resample
+    )
+
+    rasterize_frp_and_save_as_tif(
+        gdf_fperim_rd, df_fp, out_tif=var_tif, resolution=res, start_time=fire_start, end_time=fire_end, num_hours=num_hours
+    )
+
+    out_batch = gen_util.get_out_batch_for_tif(var_tif)
+    final_out_tif = gen_util.get_output_data_filename(fid, var, out_batch)
+
+    proc_util.pad_tif_to_bounds(var_tif, final_out_tif, final_bounds)
+
+    if plot_orig:
+        var_vid = gen_util.get_temp_data_video_filename(
+            fid, var, dir_type=gen_util.dir_videos, data_source=gen_util.subdir_frp, var_type=gen_util.subdir_type_resample
+        )
+        gen_util.create_animation_plot_from_tif(
+            var_tif, var_vid, start_time=fire_start
+        )

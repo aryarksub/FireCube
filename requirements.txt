@@ -9,3 +9,9 @@ rasterio==1.4.3
 Requests==2.32.4
 tqdm==4.66.2
 xarray==2024.7.0
+cfgrib==0.9.15.1
+dask==2024.8.0
+netCDF4==1.7.2
+scipy==1.13.1
+imageio==2.37.9
+imageio-ffmpeg==0.6.0

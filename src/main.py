@@ -86,6 +86,9 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         feds_util.driver_feds(
             fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, plot_orig=False
         )
+        feds_util.driver_frp(
+            fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, plot_orig=False
+        )
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
 
@@ -149,13 +152,13 @@ if __name__=='__main__':
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
-    lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40']
+    lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40', 'ROADS']
     rasterize_feds = True
     plot_sources = []
 
     fids_to_use = [zogg_id]
     process_multiple_fires(
         fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
-        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=gen_util.data_sources,
+        verbose=True, plot=plot_sources, batch_plot=True, all_plot=False, del_sources=gen_util.data_sources,
         del_intermediate=False
     )

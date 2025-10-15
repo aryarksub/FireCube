@@ -11,10 +11,18 @@ import util.processing_util as proc_util
 LF_BASE_URL = "https://lfps.usgs.gov"
 LF_JOB_URL = f"{LF_BASE_URL}/api/job/submit"
 LF_STATUS_URL = f"{LF_BASE_URL}/api/job/status"
+LF_HEALTH_URL = f"{LF_BASE_URL}/api/healthCheck"
 
 def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=['ASP2020'], out_proj='102003', resample_res=30, redo=False):
     if not redo and os.path.exists(out_file):
-        return
+        return True
+    
+    health_response = requests.get(LF_HEALTH_URL)
+    health_data = health_response.json()
+    healthy = health_data['success']
+    if not healthy:
+        print('LANDFIRE API not healthy. Retry later')
+        return False
 
     # set the LF bounds for the region (use 0.1 degree resolution and 2-pixel buffer at the boundary, to make sure to have >9km buffer even at high latitude of CONUS)
     LF_bounds = proc_util.bufferbnds(bounds, res=0.1, bufgd=2)
@@ -23,9 +31,12 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
         "Email": email,
         "Layer_List": ';'.join(layers),
         "Area_of_Interest": " ".join([str(bnd) for bnd in LF_bounds]), # west, south, east, north
-        "Output_Projection": out_proj,
-        "Resample_Resolution": resample_res
+        "Output_Projection": out_proj
     }
+
+    if isinstance(resample_res, int):
+        if (resample_res >= 31) & (resample_res <= 9999):
+            job_payload["Resample_Resolution"] = resample_res
 
     submit_response = requests.post(LF_JOB_URL, json=job_payload)
     submit_data = submit_response.json()
@@ -47,8 +58,11 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
             result_response = requests.get(download_url)
             with open(out_file, "wb") as f:
                 f.write(result_response.content)
+            return True
+        return False
     else:
         print('Data download failed')
+        return False
 
 def split_tifs_in_zip(zip_path, fid):
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -117,10 +131,13 @@ def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
     layers = get_lf_layers_given_vars_and_year(var_names, int(fire_start.year))
     lf_zip_path = gen_util.get_lf_zip_filename(fid)
 
-    download_landfire_data(
+    download_success = download_landfire_data(
         bounds=bounds, out_file=lf_zip_path,
         layers=layers, out_proj="102003", resample_res=30, redo=False
     )
+    if not download_success:
+        raise RuntimeError('LANDFIRE data download failed')
+    
     split_tifs_in_zip(lf_zip_path, fid)
 
     data_vars = gen_util.get_tif_vars_in_dir(

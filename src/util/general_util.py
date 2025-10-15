@@ -1,11 +1,16 @@
 from datetime import datetime, timedelta
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+import imageio_ffmpeg as imgffm
+import matplotlib as mpl
 import numpy as np
 import os
 from pathlib import Path
 import rasterio
 from tqdm import tqdm
+
+ffmpeg_path = imgffm.get_ffmpeg_exe()
+mpl.rcParams['animation.ffmpeg_path'] = ffmpeg_path
 
 dir_temp = 'temp'
 dir_data = 'data'
@@ -14,6 +19,7 @@ subdir_era5 = 'era5'
 subdir_pyr = 'pyr'
 subdir_lf = 'lf'
 subdir_feds = 'feds'
+subdir_frp = 'frp'
 subdir_type_original = 'original'
 subdir_type_converted = 'converted'
 subdir_type_resample = 'resample'
@@ -29,10 +35,10 @@ subdir_landfire = 'landfire' # landfire 30m
 subdir_firespread = 'fire_spread' # FEDS rasters 300m
 
 dir_types = [dir_data, dir_videos]
-data_sources = [subdir_era5, subdir_pyr, subdir_lf, subdir_feds]
+data_sources = [subdir_era5, subdir_pyr, subdir_lf, subdir_feds, subdir_frp]
 var_types = [subdir_type_original, subdir_type_converted, subdir_type_resample]
 
-data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_topo, subdir_landfire, subdir_firespread]
+data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_topo, subdir_landfire, subdir_firespread, subdir_frp]
 
 def create_dirs_for_fire(fid):
     # create folders in temporary (local) directory
@@ -93,6 +99,8 @@ def get_out_batch_for_tif(tif):
         return subdir_landfire
     elif subdir_feds in tif:
         return subdir_firespread
+    elif subdir_frp in tif:
+        return subdir_frp
     else:
         print(f'Resolution + Var combination for file {tif} is not supported')
 

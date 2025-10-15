@@ -12,6 +12,8 @@ import util.processing_util as proc_util
 def download_ERA5_reg_1m(y,m,days,bnds, varERA5 = ['2m_temperature'], tmpfile='ERA5.grib'):
     '''  use cdsapi to fetch the ERA5 data for multiple days in a month and save to a temporary file
     for each day, the 24 hourly data are retrieved.
+
+    Note that to use cdsapi, it must be locally set up. See this guide: https://cds.climate.copernicus.eu/how-to-api
     '''
     dataset = 'reanalysis-era5-land'
     # ERA5 area is defined as [N,W,S,E]; bnds is defined as [W,S,E,N]
