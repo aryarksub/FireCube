@@ -10,8 +10,13 @@ from matplotlib import animation
 from matplotlib.colors import ListedColormap
 import matplotlib.dates as mdates
 import os
-import util.feds_util as feds_util
-import util.general_util as gen_util
+import sys
+
+# Add the parent directory of 'vis_util' to the sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import feds_util
+import general_util as gen_util
 
 def _span_days(lo, hi) -> float:
     dt = pd.to_datetime(hi) - pd.to_datetime(lo)
@@ -68,6 +73,7 @@ def _find_evt_crosswalk(fname: str = "LF2024_EVT.csv") -> Path:
         proj_root / "inputData" / fname,
         proj_root / fname,
         Path.cwd() / fname,
+        Path.cwd() / "inputData" / fname
     ]
     for p in candidates:
         if p.exists():
@@ -842,8 +848,14 @@ def make_movies(fid: str):
 
 # CLI
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 2:
-        print("Usage: python src/make_movies.py <FIRE_EVENT_ID>")
+    creek_id = 'CA3720111927220200905'
+    zogg_id = 'CA4054112256820200927'
+    fid_to_use = zogg_id
+
+    if len(sys.argv) == 1:
+        make_movies(fid_to_use)
+    elif len(sys.argv) != 2:
+        print("Usage: python src/make_movie.py <FIRE_EVENT_ID>")
         raise SystemExit(2)
-    make_movies(sys.argv[1])
+    else:
+        make_movies(sys.argv[1])
