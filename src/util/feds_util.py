@@ -7,8 +7,8 @@ import rasterio
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds
 
-import general_util as gen_util
-import processing_util as proc_util
+import util.general_util as gen_util
+import util.processing_util as proc_util
 
 dir_feds25 = os.path.join('inputData', 'FEDS2.5')
 dir_firepix = os.path.join('inputData', 'firepix')

@@ -159,6 +159,6 @@ if __name__=='__main__':
     fids_to_use = [zogg_id]
     process_multiple_fires(
         fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
-        verbose=True, plot=plot_sources, batch_plot=True, all_plot=False, del_sources=gen_util.data_sources,
+        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=[],
         del_intermediate=False
     )
