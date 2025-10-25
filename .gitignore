@@ -6,6 +6,9 @@ src/temp*
 # Make output data/visualization private (for now)
 output/
 
+# Make large FEDS input data private (GitHub space constraints)
+inputData/Full_FEDS
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
