@@ -46,7 +46,7 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
     }
 
     status = "Executing"
-    while status == "Executing":
+    while status == "Executing" or status == "Pending":
         time.sleep(10)  # wait 10 seconds between polls
         status_response = requests.post(LF_STATUS_URL, json=status_payload)
         status_data = status_response.json()

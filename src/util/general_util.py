@@ -12,6 +12,8 @@ from tqdm import tqdm
 ffmpeg_path = imgffm.get_ffmpeg_exe()
 mpl.rcParams['animation.ffmpeg_path'] = ffmpeg_path
 
+plt.switch_backend('agg')
+
 dir_temp = 'temp'
 dir_data = 'data'
 dir_videos = 'videos'

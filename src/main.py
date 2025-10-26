@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import geopandas as gpd
 
 from era5.era5 import driver_era5
 from landfire.landfire import driver_landfire
@@ -146,6 +147,39 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
             if verbose:
                 print(f'Error when reading file {fid_file} - no processing will be done')
 
+def random_select_fids(n=10, size_threshold=None, duration_threshold=None):
+    fires_df = pd.read_csv(feds_util.feds_firelist)
+    
+    # Filter out Alaska/Hawaii since LANDFIRE operational roads data is only pulled for CONUS
+    fires_df = fires_df[~fires_df['Event_ID'].str.startswith(('AK', 'HI'))]
+
+    if size_threshold is not None:
+        if size_threshold >= 1000:
+            fires_df = fires_df[fires_df['BurnBndAc'] < size_threshold]
+        else:
+            raise ValueError('Size threshold for filtering must be at least 1000 acres')
+        
+    if duration_threshold is not None:
+        if duration_threshold >= 1:
+            fires_df = fires_df[
+                (pd.to_datetime(fires_df['ted']).dt.normalize() - pd.to_datetime(fires_df['tst'])).dt.days.between(1, duration_threshold)
+            ]
+        else:
+            raise ValueError('Duration threshold for filtering must be at least 1 day')
+    
+    sample_fires = fires_df.sample(n=n)
+    sample_fids = set(sample_fires['Event_ID'])
+    
+    # Ensure that all fires selected have FEDS fireline data (some fires don't have this data)
+    fids_to_use = []
+    for fid in sample_fids:
+        fname = feds_util.set_gdffile(fid)
+        gdf = gpd.read_file(fname, layer='fireline')
+        if not gdf.empty:
+            fids_to_use.append(fid)
+    return fids_to_use
+
+
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
@@ -155,10 +189,16 @@ if __name__=='__main__':
     lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40', 'ROADS']
     rasterize_feds = True
     plot_sources = []
+    
+    do_sample_fids = True
 
-    fids_to_use = [zogg_id]
+    if do_sample_fids:
+        fids_to_use = random_select_fids(n=5, size_threshold=10000, duration_threshold=7)
+    else:
+        fids_to_use = [zogg_id]
+    
     process_multiple_fires(
         fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
-        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=[],
+        verbose=True, plot=plot_sources, batch_plot=True, all_plot=False, del_sources=[],
         del_intermediate=False
     )

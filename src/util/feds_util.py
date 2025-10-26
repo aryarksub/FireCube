@@ -10,9 +10,12 @@ from rasterio.transform import from_bounds
 import util.general_util as gen_util
 import util.processing_util as proc_util
 
-dir_feds25 = os.path.join('inputData', 'FEDS2.5')
+# Supress SettingWithCopyWarning
+pd.set_option('mode.chained_assignment', None)
+
+dir_feds25 = os.path.join('inputData', 'Full_FEDS')
 dir_firepix = os.path.join('inputData', 'firepix')
-feds_firelist = os.path.join('inputData', 'feds2.5_firelist.csv')
+feds_firelist = os.path.join('inputData', 'fireslist2012-2023_MTBSfull.csv')
 
 def set_gdffile( Event_ID):
     """
@@ -25,8 +28,16 @@ def set_gdffile( Event_ID):
     Returns:
         str: The constructed file path for the GeoPackage file.
     """
-    fnm = os.path.join(dir_feds25, Event_ID + '.gpkg')
-    return fnm
+    # for all years under FEDS folder, try to find file corresponding to given event ID
+    target_file = f'{Event_ID}.gpkg'
+
+    for root, dirs, files in os.walk(dir_feds25):
+        if target_file in files:
+            return os.path.join(root, target_file)
+    return None
+
+    # fnm = os.path.join(dir_feds25, Event_ID + '.gpkg')
+    # return fnm
 
 def check_gdffile( Event_ID):
     """
