@@ -193,12 +193,13 @@ if __name__=='__main__':
     do_sample_fids = True
 
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=5, size_threshold=10000, duration_threshold=7)
+        fids_to_use = random_select_fids(n=10, size_threshold=100000, duration_threshold=28)
     else:
         fids_to_use = [zogg_id]
     
+    # Standard procedure is to use del_sources=gen_util.data_sources to delete temporary created data files
     process_multiple_fires(
         fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
-        verbose=True, plot=plot_sources, batch_plot=True, all_plot=False, del_sources=[],
+        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=gen_util.data_sources,
         del_intermediate=False
     )
