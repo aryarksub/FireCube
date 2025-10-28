@@ -10,19 +10,25 @@ def get_layer_range_data():
     key = 'layer'
     return layer_range_df.set_index(key).to_dict(orient='index')
 
+def find_landfire_layer_file(abbrev, lf_dir):
+    for file in os.listdir(lf_dir):
+        if abbrev in file and os.path.isfile(os.path.join(lf_dir, file)):
+            return file
+    return None
+
 def validate_one_fire_data(fid, layer_data_dict):
     fire_folder = os.path.join('output', 'cubes', fid)
     if not os.path.exists(fire_folder):
         raise NotADirectoryError(f'No folder for fire {fid} exists')
     
     invalid_layers = []
+    evt_found = False
     
     for layer, layer_data in layer_data_dict.items():
-        category = layer_data['category']
-
-        # Ignore landfire variables temporarily since their naming convention is not consistent
-        if category == 'landfire':
+        if 'evt' in layer and evt_found:
             continue
+
+        category = layer_data['category']
 
         min_val, max_val, null_val = layer_data['min'], layer_data['max'], layer_data['nan']
         
@@ -30,9 +36,33 @@ def validate_one_fire_data(fid, layer_data_dict):
         if not os.path.exists(layer_folder):
             raise NotADirectoryError(f'No folder for layer category {category} and fire {fid} exists')
         
-        layer_tif = os.path.join(layer_folder, f'{layer}.tif')
-        if not os.path.exists(layer_tif):
+        # LANDFIRE layers are named differently than just "{layer}.tif"
+        if category == 'landfire':
+            lf_layer_file = find_landfire_layer_file(layer, layer_folder)
+
+            if lf_layer_file is None:
+                # Fuel behavior model layers (f13/f40) can also be named (fbfm13/fbfm40)
+                if layer == 'f13' or layer == 'f40':
+                    lf_layer_file = find_landfire_layer_file(layer.replace('f', 'fbfm'), layer_folder)
+                    layer_tif = os.path.join(layer_folder, lf_layer_file)
+                # If layer files for 105/200evt cannot be found, skip since layer may be 220evt
+                elif layer == '105evt' or layer == '200evt':
+                    continue
+                # Since 220evt is the last possible EVT layer, if it cannot be found, then the layer does not exist
+                elif layer == '220evt':
+                    layer_tif = None
+                else:
+                    layer_tif = None
+            else:
+                layer_tif = os.path.join(layer_folder, lf_layer_file)
+        else:
+            layer_tif = os.path.join(layer_folder, f'{layer}.tif')
+        
+        if layer_tif is None or not os.path.exists(layer_tif):
             raise FileNotFoundError(f'No file for layer {layer} and fire {fid} exists')
+        
+        if 'evt' in layer:
+            evt_found = True
         
         with rasterio.open(layer_tif) as src:
             for band in range(src.count):
@@ -74,7 +104,7 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
     return invalid_fires
 
 if __name__ == '__main__':
-    fire_id = 'AZ3585911322920220721'
+    fire_id = 'AL3105608678420130203'
 
     layer_data = get_layer_range_data()
 
@@ -86,7 +116,7 @@ if __name__ == '__main__':
         valid_data, invalid_layers = validate_one_fire_data(fire_id, layer_data)
         for layer in invalid_layers:
             print(layer)
-        print(f'Fire {fire_id} has valid data')
+        print(f'Fire {fire_id} has {"" if valid_data else "in"}valid data')
     else:
         invalid_fires = validate_existing_fires(layer_data_dict=layer_data, verbose=True)
         for fire in invalid_fires:
