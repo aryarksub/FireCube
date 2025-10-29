@@ -16,7 +16,8 @@ def find_landfire_layer_file(abbrev, lf_dir):
             return file
     return None
 
-def validate_one_fire_data(fid, layer_data_dict):
+def validate_one_fire_data(fid, layer_data_dict=None):
+    layer_data_dict = layer_data_dict if layer_data_dict is not None else get_layer_range_data()
     fire_folder = os.path.join('output', 'cubes', fid)
     if not os.path.exists(fire_folder):
         raise NotADirectoryError(f'No folder for fire {fid} exists')

@@ -8,6 +8,7 @@ from pyregence.pyregence import driver_pyregence
 import util.feds_util as feds_util
 import util.general_util as gen_util
 import util.processing_util as proc_util
+import util.validation_util as valid_util
 
 firelist = pd.read_csv(feds_util.feds_firelist, index_col=0)
 
@@ -92,6 +93,13 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         )
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
+
+    valid_data, invalid_layers = valid_util.validate_one_fire_data(fid)
+    if not valid_data:
+        if verbose:
+            for layer in invalid_layers:
+                print(layer)
+        raise ValueError(f'Fire {fid} has invalid data')
 
     all_variable_input_tifs, all_variable_output_tifs = gen_util.get_all_var_and_output_tifs_for_fire(fid)
 
