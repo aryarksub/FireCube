@@ -10,12 +10,39 @@ import util.general_util as gen_util
 import util.processing_util as proc_util
 import util.validation_util as valid_util
 
+# DataFrame of all fires stored by FEDS/MTBS
 firelist = pd.read_csv(feds_util.feds_firelist, index_col=0)
 
 def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False):
+    """
+    Driver function to process a single fire. Processing includes downloading data from different sources (ERA5, Pyregence,
+    LANDFIRE, FEDS), cropping/rasterizing/resampling as needed, and creating plots of the layers.
+
+    Args:
+        fid (str): Event ID of the fire to process.
+        era5_vars (list, optional): List of layers to download from ERA5. Full list of available layers
+         can be found at https://confluence.ecmwf.int/display/CKB/ERA5-Land%3A+data+documentation#heading-Parameterlistings. 
+         Defaults to [].
+        do_pyr (bool, optional): True if Pyregence layers should be downloaded; False otherwise. Defaults to True.
+        lf_vars (list, optional): List of layers to download from LANDFIRE. Full list of available layers can be found at
+         https://www.landfire.gov/sites/default/files/documents/LF_Data_Dictionary.pdf in Section 4. Defaults to [].
+        do_feds (bool, optional): True if FEDS fireline data should be obtained; False otherwise. Defaults to True.
+        verbose (bool, optional): True if descriptive messages should be printed; False otherwise. Defaults to False.
+        plot (list, optional): List of sources for which plots should be generated (see gen_util.data_sources). Defaults to [].
+        batch_plot (bool, optional): True if plots should be generated for layer categories; False otherwise. Defaults to False.
+        all_plot (bool, optional): True if a plot should be generated with all layers; False otherwise. Defaults to False.
+        del_sources (list, optional): List of sources for which temporarily created data should be deleted. 
+         Defaults to gen_util.data_sources.
+        del_intermediate (bool, optional): True if intermediate downloaded data (e.g. zip/tar files) should be deleted;
+         False otherwise. Defaults to False.
+
+    Raises:
+        ValueError: Occurs when the downloaded data is invalid (e.g. layer value is outside of min/max range).
+    """
     if verbose:
         print(f'Processing fire {fid}')
     
+    # Only process a fire if it has FEDS data, specifically for fire perimeter
     gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = feds_util.read_1fire(fid)
     if gdf_fperim_rd is None:
         if verbose:
@@ -23,21 +50,26 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         return
     
     gen_util.create_dirs_for_fire(fid)
-    bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1) # W,S,E,N
+    # West/South/East/North bounds for the fire
+    bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1)
     df_t = pd.to_datetime(gdf_fperim_rd.t)
+    # Add time-buffer to DataFrame
     df_t_with_buffer = proc_util.add_time_buffers(df_t)
 
     # Convert gdf_perim to EPSG:5070
     gdf_fperim_5070 = gdf_fperim_rd.to_crs('EPSG:5070') 
     bounds_5070 = gdf_fperim_5070.total_bounds
 
+    # Get fire center
     fire_row = firelist[firelist['Event_ID'] == fid]
     center_lat = round((fire_row['lat0'].values[0] + fire_row['lat1'].values[0]) / 2, 2)
     center_lon = round((fire_row['lon0'].values[0] + fire_row['lon1'].values[0]) / 2, 2)
+    
     fire_start = pd.Timestamp(df_t_with_buffer.min())
     # Add 11 to go from mid-day to end of last day (hour 23:00 is the last time)
     fire_hours = int( (df_t_with_buffer.max() - df_t_with_buffer.min()).total_seconds() / 3600) + 11
 
+    # ERA5 download
     if len(era5_vars) != 0:
         if verbose: print(f'Getting ERA5 data for fire {fid}')
         
@@ -49,6 +81,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     else:
         if verbose: print(f'No ERA5 variables specified; not getting ERA5 data for fire {fid}')
 
+    # Pyregence download
     if do_pyr:
         if verbose: print(f'Getting Pyregence data for fire {fid}')
         driver_pyregence(
@@ -58,6 +91,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     else:
         if verbose: print(f'Skipping Pyregence data for fire {fid}')
 
+    # LANDFIRE download
     if len(lf_vars) != 0:
         if verbose: print(f'Getting LANDFIRE data for fire {fid}')
 
@@ -78,11 +112,13 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
             print(f'No output TIFs were created - stopping processing for fire {fid}')
         return
 
+    # Make all non-FEDS TIFs centered and cropped to the same region
     proc_util.center_and_crop_tifs_to_same_area(non_feds_input_tifs, non_feds_output_tifs, bounds_5070)
 
     # Bounding box for all variable/layer tifs is the same, so we can just take the box for the first tif
     largest_var_tif_bounds = proc_util.get_tif_bounds(non_feds_output_tifs[0])
 
+    # FEDS + FRP download/rasterization
     if do_feds:
         if verbose: print(f'Getting/Rasterizing FEDS data for fire {fid}')
         feds_util.driver_feds(
@@ -94,6 +130,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
 
+    # Validate all downloaded data
     valid_data, invalid_layers = valid_util.validate_one_fire_data(fid)
     if not valid_data:
         if verbose:
@@ -101,8 +138,10 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
                 print(layer)
         raise ValueError(f'Fire {fid} has invalid data')
 
+    # Get output TIF names (as stored in output/cubes directory)
     all_variable_input_tifs, all_variable_output_tifs = gen_util.get_all_var_and_output_tifs_for_fire(fid)
 
+    # Create batch plots
     if batch_plot:
         for batch in gen_util.data_batches:
             if batch != gen_util.subdir_vis:
@@ -114,6 +153,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
                     fire_start
                 )
 
+    # Create one large plot with all variables
     if all_plot: 
         if verbose:
             print(f'Generating plot for all variables - fire {fid}')
@@ -123,6 +163,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
             start_time=fire_start
         )
 
+    # Remove temporary data files
     gen_util.remove_temp_dir_files(
         fid, 
         del_dir_types=gen_util.dir_types,
@@ -133,6 +174,30 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     )
 
 def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False):
+    """
+    Driver function to process multiple fire. Processing includes downloading data from different sources (ERA5, Pyregence,
+    LANDFIRE, FEDS), cropping/rasterizing/resampling as needed, and creating plots of the layers. The multiple fires to process
+    can be given as either a list of strings (fire event IDs) or a file where each fire event ID is on a separate line.
+
+    Args:
+        fid_list (list, optional): List of fire event IDs. Defaults to [].
+        fid_file (str, optional): Name of file with fire event IDs. Defaults to None.
+        era5_vars (list, optional): List of layers to download from ERA5. Full list of available layers
+         can be found at https://confluence.ecmwf.int/display/CKB/ERA5-Land%3A+data+documentation#heading-Parameterlistings. 
+         Defaults to [].
+        do_pyr (bool, optional): True if Pyregence layers should be downloaded; False otherwise. Defaults to True.
+        lf_vars (list, optional): List of layers to download from LANDFIRE. Full list of available layers can be found at
+         https://www.landfire.gov/sites/default/files/documents/LF_Data_Dictionary.pdf in Section 4. Defaults to [].
+        do_feds (bool, optional): True if FEDS fireline data should be obtained; False otherwise. Defaults to True.
+        verbose (bool, optional): True if descriptive messages should be printed; False otherwise. Defaults to False.
+        plot (list, optional): List of sources for which plots should be generated (see gen_util.data_sources). Defaults to [].
+        batch_plot (bool, optional): True if plots should be generated for layer categories; False otherwise. Defaults to False.
+        all_plot (bool, optional): True if a plot should be generated with all layers; False otherwise. Defaults to False.
+        del_sources (list, optional): List of sources for which temporarily created data should be deleted. 
+         Defaults to gen_util.data_sources.
+        del_intermediate (bool, optional): True if intermediate downloaded data (e.g. zip/tar files) should be deleted;
+         False otherwise. Defaults to False.
+    """
     if len(fid_list) == 0 and fid_file is None:
         if verbose:
             print('No FIDs given - no processing will be done')
@@ -156,17 +221,33 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
                 print(f'Error when reading file {fid_file} - no processing will be done')
 
 def random_select_fids(n=10, size_threshold=None, duration_threshold=None):
-    fires_df = pd.read_csv(feds_util.feds_firelist)
-    
-    # Filter out Alaska/Hawaii since LANDFIRE operational roads data is only pulled for CONUS
-    fires_df = fires_df[~fires_df['Event_ID'].str.startswith(('AK', 'HI'))]
+    """
+    Select at most n fire event IDs from the entire list of fires based on a given size and duration threshold. If some of 
+    the n selected FIDs do not have FEDS fire line data, they will be removed. Thus, it is possible for the number of returned
+    FIDs to be less than n.
 
+    Args:
+        n (int, optional): Maximum number of fire event IDs to return. Defaults to 10.
+        size_threshold (int, optional): Upper bound of fire size in terms of burned area. Defaults to None.
+        duration_threshold (int, optional): Upper bound of fire duration in days. Defaults to None.
+
+    Raises:
+        ValueError: Occurs when the size threshold is less than 1000 or the duration threshold is less than 1.
+
+    Returns:
+        list: List of FIDs that meet the given size/duration thresholds.
+    """
+    # Filter out Alaska/Hawaii since LANDFIRE operational roads data is only pulled for CONUS
+    fires_df = firelist[~firelist['Event_ID'].str.startswith(('AK', 'HI'))]
+
+    # Filter based on size threshold if it is provided
     if size_threshold is not None:
         if size_threshold >= 1000:
             fires_df = fires_df[fires_df['BurnBndAc'] < size_threshold]
         else:
             raise ValueError('Size threshold for filtering must be at least 1000 acres')
         
+    # Filter based on duration threshold if it is provided
     if duration_threshold is not None:
         if duration_threshold >= 1:
             fires_df = fires_df[
@@ -198,10 +279,12 @@ if __name__=='__main__':
     rasterize_feds = True
     plot_sources = []
     
+    # True : FIDs should be randomly selected
+    # False: Use hard-coded FID(s)
     do_sample_fids = True
 
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=10, size_threshold=100000, duration_threshold=28)
+        fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28)
     else:
         fids_to_use = [zogg_id]
     
