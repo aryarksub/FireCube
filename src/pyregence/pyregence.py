@@ -9,6 +9,13 @@ import util.general_util as gen_util
 import util.processing_util as proc_util
   
 def get_cloudfire_channel():
+    """
+    Get ELMFIRE Cloudfire server channel. See https://github.com/lautenberger/elmfire/blob/main/cloudfire/elmfire.py
+    for more information.
+
+    Returns:
+        str: String of Cloudfire server channel
+    """
     if "CLOUDFIRE_SERVER" in os.environ:
         cloudfire_server = os.environ['CLOUDFIRE_SERVER']
     else:
@@ -18,14 +25,35 @@ def get_cloudfire_channel():
 def download_pyregence_data(
         out_dir, out_file, center, buffer=(60,60,60,60), wx_start_time=None, wx_num_hours=24, redo=False
 ):
+    """
+    Download Pyregence data using the given parameters. Data will be stored in the given output file in the given
+    output directory. Code modified from the original source: 
+    https://github.com/lautenberger/elmfire/blob/main/cloudfire/elmfire.py
+    The data will be downloaded in Tar format
+
+    Args:
+        out_dir (str): Path to the directory where output file resides.
+        out_file (str): Name of the output file to which data should be written.
+        center (tuple): Center of the area for which data should be obtained. The tuple should contain two values: 
+         latitude and longitude, represented in degrees.
+        buffer (tuple, optional): Buffer to be placed around the center when downloading data. The tuple should contain
+         four values, corresponding to the buffer at the West/East/South/North borders. Values are represented in
+         kilometers (km). Defaults to (60,60,60,60).
+        wx_start_time (pandas.Timestamp, optional): Start time from which data should be obtained. Defaults to None.
+        wx_num_hours (int, optional): Number of hours for which data should be obtained. Defaults to 24.
+        redo (bool, optional): True if data should be re-downloaded even if the temporary NetCDF file exists; False otherwise. 
+         Defaults to False.
+    """
     output_path = os.path.join(out_dir, out_file)
     if not redo and os.path.exists(output_path):
         return
 
+    # Basic input validation for center/buffer arguments
     assert len(center) == 2 and len(buffer) == 4
 
     cloudfire_channel = get_cloudfire_channel()
     center_lat, center_lon = center
+    # Convert buffer from kilometers to meters
     west_buffer, east_buffer, south_buffer, north_buffer = [1000*buf for buf in buffer]
 
     with grpc.insecure_channel(cloudfire_channel) as channel:
@@ -37,14 +65,18 @@ def download_pyregence_data(
                                                                east_buffer = east_buffer,
                                                                south_buffer = south_buffer,
                                                                north_buffer = north_buffer,
-                                                               do_fuel = True,
+                                                               # get fuel data
+                                                               do_fuel = True, 
                                                                fuel_source = 'landfire',
                                                                fuel_version = '2.4.0',
-                                                               do_wx = True,
-                                                               wx_type = 'historical',
-                                                               wx_start_time = wx_start_time.strftime ("%Y-%m-%d %H:%M"),
+                                                               # get wind data
+                                                               do_wx = True, 
+                                                               # historical is needed to get fires in the past
+                                                               wx_type = 'historical', 
+                                                               wx_start_time = wx_start_time.strftime("%Y-%m-%d %H:%M"),
                                                                wx_num_hours = wx_num_hours,
-                                                               do_ignition = False,
+                                                               # do not get ignition data
+                                                               do_ignition = False, 
                                                                point_ignition = True,
                                                                ignition_lat = -9999,
                                                                ignition_lon = -9999,
@@ -63,9 +95,17 @@ def download_pyregence_data(
                         f.write(chunk)
 
 def extract_tif_from_pyr_tar(fid, tar_filepath):
+    """
+    Extract all TIF files from the tar file with all data. 
+
+    Args:
+        fid (str): Fire event ID
+        tar_filepath (str): Path to the tar file with all data.
+    """
     with tarfile.open(tar_filepath, 'r') as tar:
         for member in tar.getmembers():
             if member.name.endswith('tif'):
+                # Create output TIF file name based on layer name
                 var_name = os.path.splitext(os.path.basename(member.name))[0]
                 output_path = gen_util.get_temp_data_video_filename(
                     fid, var_name, dir_type=gen_util.dir_data,
@@ -76,10 +116,23 @@ def extract_tif_from_pyr_tar(fid, tar_filepath):
                         out_file.write(tif_file.read())
 
 def driver_pyregence(fid, fire_center, fire_start, fire_hours, plot_types=[]):
+    """
+    Driver function for downloading, cropping, resampling, and plotting Pyregence data.
+
+    Args:
+        fid (str): Fire event ID
+        fire_center (tuple): Center of the area for which data should be obtained. The tuple should contain two values: 
+         latitude and longitude, represented in degrees.
+        fire_start (pandas.Timestamp): Start time from which data should be obtained.
+        fire_hours (int): Number of hours for which data should be obtained.
+        plot_types (list, optional): List of types of data plots should be created for. Available types of data are listed
+         in gen_util.var_types. Defaults to [].
+    """
     full_out_path = gen_util.get_pyr_tar_filename(fid)
     out_filename = os.path.basename(full_out_path)
     out_dir = os.path.dirname(full_out_path)
     
+    # Use 90 km buffer
     download_pyregence_data(out_dir, out_filename, fire_center, (90,90,90,90), fire_start, fire_hours, redo=False)
     extract_tif_from_pyr_tar(fid, full_out_path)
     data_vars = gen_util.get_tif_vars_in_dir(
@@ -87,6 +140,7 @@ def driver_pyregence(fid, fire_center, fire_start, fire_hours, plot_types=[]):
     )
     
     for var in data_vars:
+        # Get data/plot file names
         pyr_var_fnames = [
             gen_util.get_temp_data_video_filename(
                 fid, var, dir_type=gen_util.dir_data,
@@ -107,6 +161,7 @@ def driver_pyregence(fid, fire_center, fire_start, fire_hours, plot_types=[]):
         # Resample CRS-converted data to resolution defined in resample_tif (closest multiple of 30)
         proc_util.resample_tif(pyr_var_fnames[1], pyr_var_fnames[2], target_res=None)
 
+        # Plot the specified types of data (original/converted/resampled)
         for plot_type in set(plot_types):
             if plot_type in gen_util.var_types:
                 index = gen_util.var_types.index(plot_type)
