@@ -14,9 +14,27 @@ LF_STATUS_URL = f"{LF_BASE_URL}/api/job/status"
 LF_HEALTH_URL = f"{LF_BASE_URL}/api/healthCheck"
 
 def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=['ASP2020'], out_proj='102003', resample_res=30, redo=False):
+    """
+    Download the LANDFIRE data given the specified parameters. The downloaded data will be stored as a ZIP file.
+
+    Args:
+        bounds (list): List of lat/lon coordinates specified in terms of West/South/East/North coordinates.
+        out_file (str, optional): Name of output file to which data will be downloaded. Defaults to 'temp.zip'.
+        email (str, optional): Email to which data will be sent. Defaults to "a@a.com".
+        layers (list, optional): List of LANDFIRE layers to download. Full list of available layers can be found at
+         https://www.landfire.gov/sites/default/files/documents/LF_Data_Dictionary.pdf in Section 4. Defaults to ['ASP2020'].
+        out_proj (str, optional): Output projection (ESRI code). Defaults to '102003'.
+        resample_res (int, optional): Resolution to which data should be resampled (in meters). Defaults to 30.
+        redo (bool, optional): True if data should be re-downloaded even if the temporary ZIP file exists; False otherwise. 
+         Defaults to False.
+
+    Returns:
+        bool: True if data download succeeded; False otherwise.
+    """
     if not redo and os.path.exists(out_file):
         return True
     
+    # If LANDFIRE server is not healthy, download will fail (indicate as such and end process)
     health_response = requests.get(LF_HEALTH_URL)
     health_data = health_response.json()
     healthy = health_data['success']
@@ -24,7 +42,8 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
         print('LANDFIRE API not healthy. Retry later')
         return False
 
-    # set the LF bounds for the region (use 0.1 degree resolution and 2-pixel buffer at the boundary, to make sure to have >9km buffer even at high latitude of CONUS)
+    # Set the LF bounds for the region (use 0.1 degree resolution and 2-pixel buffer at the boundary)
+    # 2-pixel buffer ensures we have at least 9km buffer even at high latitude parts of CONUS
     LF_bounds = proc_util.bufferbnds(bounds, res=0.1, bufgd=2)
 
     job_payload = {
@@ -34,10 +53,12 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
         "Output_Projection": out_proj
     }
 
+    # If resample resolution is in the range [31,9999], include it in the API request
     if isinstance(resample_res, int):
         if (resample_res >= 31) & (resample_res <= 9999):
             job_payload["Resample_Resolution"] = resample_res
 
+    # Submit request to get data and retrieve corresponding job ID
     submit_response = requests.post(LF_JOB_URL, json=job_payload)
     submit_data = submit_response.json()
     job_id = submit_data.get("jobId")
@@ -45,13 +66,15 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
         "JobId": job_id
     }
 
+    # While the job is executing/pending, check status every 10 seconds
     status = "Executing"
     while status == "Executing" or status == "Pending":
-        time.sleep(10)  # wait 10 seconds between polls
+        time.sleep(10) 
         status_response = requests.post(LF_STATUS_URL, json=status_payload)
         status_data = status_response.json()
         status = status_data.get("status")
 
+    # If job succeeds, download the data from the URL specified in job response
     if status == "Succeeded":
         download_url = status_data['outputFile']
         if download_url:
@@ -65,7 +88,15 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
         return False
 
 def split_tifs_in_zip(zip_path, fid):
+    """
+    Split the ZIP file with all LANDFIRE data into separate TIF files for each layer.
+
+    Args:
+        zip_path (str): Path corresponding to ZIP file with all LANDFIRE data.
+        fid (str): Fire event ID.
+    """
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        # There should be one TIF file in the ZIP file with all data
         file_list = zip_ref.namelist()
         tif_files = [file for file in file_list if file.endswith('.tif')]
         assert len(tif_files) == 1
@@ -73,11 +104,14 @@ def split_tifs_in_zip(zip_path, fid):
         with zip_ref.open(tif_files[0]) as tif_file:
             with rasterio.open(BytesIO(tif_file.read())) as src:
                 profile = src.profile.copy()
+                # Each band corresponds to a single LANDFIRE layer
                 for i in range(1, src.count+1):
                     band_data = src.read(i)
+                    # Get band name based on description and normalize it
                     band_name = src.descriptions[i-1] if src.descriptions[i-1] else f'band_{i}'
                     var_name = band_name.replace('US_', '').lower()
 
+                    # Create profile specific to the band (along with generic profile)
                     band_profile = profile.copy()
                     band_profile.update({
                         "count": 1,
@@ -85,6 +119,7 @@ def split_tifs_in_zip(zip_path, fid):
                         "driver": "GTiff"
                     })
 
+                    # Get name of TIF file data should be written to, and write data there
                     output_path = gen_util.get_temp_data_video_filename(
                         fid, var_name, dir_type=gen_util.dir_data,
                         data_source=gen_util.subdir_lf, var_type=gen_util.subdir_type_original
@@ -94,7 +129,20 @@ def split_tifs_in_zip(zip_path, fid):
                         dst.set_band_description(1, band_name)
 
 def get_lf_layers_given_vars_and_year(var_names, year):
+    """
+    Get LANDFIRE layer name for the given variables and year.
+
+    Args:
+        var_names (list): List of LANDFIRE variables.
+        year (int): Year to use when determining version.
+
+    Returns:
+        list: List of LANDFIRE layer names (one for each given variable).
+    """
+
+    # Yearly cutpoints (one for each time LANDFIRE released a new version)
     year_cutpoints = [2014,2020,2022,2023,2024]
+    # Map of variables EVT/FBFM13/FBFM40 to layer names based on each yearly cutpoint
     version_lists = {
         'EVT': [str(num) + 'EVT' for num in [105,200,220,230,240]],
         'FBFM13': ['105FBFM13', '200F13_20', '220F13_22', '230FBFM13', '240FBFM13'],
@@ -108,8 +156,10 @@ def get_lf_layers_given_vars_and_year(var_names, year):
     layers = []
 
     for var in var_names:
+        # ASP/ELEV/SLPD only have one layer name (suffix 2020)
         if var in ['ASP', 'ELEV', 'SLPD']:
             layer_name = f'{var}2020'
+        # EVT/FBFM13/FBFM40 have layer names as defined in maps above
         elif var in ['EVT', 'FBFM13', 'FBFM40']:
             versions = version_lists[var]
             for ind in range(len(year_cutpoints)):
@@ -118,8 +168,10 @@ def get_lf_layers_given_vars_and_year(var_names, year):
                     break
             else:
                 layer_name = latest_versions[var]
+        # ROADS only has one layer name (240ROADS_23)
         elif var in ['ROADS']:
             layer_name = '240ROADS_23'
+        # Other layer names are not supported by our code
         else:
             print(f'Layer for {var} not in existing cases; will not be included in data download')
         layers.append(layer_name)
@@ -127,6 +179,21 @@ def get_lf_layers_given_vars_and_year(var_names, year):
 
 
 def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
+    """
+    Driver function for downloading, cropping, resampling, and plotting LANDFIRE data.
+
+    Args:
+        fid (str): Fire event ID.
+        var_names (list): List of LANDFIRE layers to download. Full list of available layers can be found at
+         https://www.landfire.gov/sites/default/files/documents/LF_Data_Dictionary.pdf in Section 4.
+        bounds (list): List of lat/lon coordinates specified in terms of West/South/East/North coordinates.
+        fire_start (pandas.TimeStamp): Time of fire start (including buffer).
+        plot_types (list, optional): List of types of data plots should be created for. Available types of data are listed
+         in gen_util.var_types. Defaults to [].
+
+    Raises:
+        RuntimeError: Occurs when LANDFIRE download failed.
+    """
     # bounds should be in W,S,E,N format
     layers = get_lf_layers_given_vars_and_year(var_names, int(fire_start.year))
     lf_zip_path = gen_util.get_lf_zip_filename(fid)
@@ -140,11 +207,13 @@ def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
     
     split_tifs_in_zip(lf_zip_path, fid)
 
+    # Get all LANDFIRE data variables
     data_vars = gen_util.get_tif_vars_in_dir(
         os.path.join(gen_util.dir_temp, gen_util.dir_data, fid, gen_util.subdir_lf, gen_util.subdir_type_original)
     )
 
     for var in data_vars:
+        # Get data/plot file names
         lf_var_fnames = [
             gen_util.get_temp_data_video_filename(
                 fid, var, dir_type=gen_util.dir_data,
@@ -165,6 +234,7 @@ def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
         # Resample CRS-converted data to resolution defined in resample_tif (closest multiple of 30)
         proc_util.resample_tif(lf_var_fnames[1], lf_var_fnames[2], target_res=None, catype=True)
 
+        # Plot the specified types of data (original/converted/resampled)
         for plot_type in set(plot_types):
             if plot_type in gen_util.var_types:
                 index = gen_util.var_types.index(plot_type)
@@ -175,6 +245,3 @@ def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
                     mask=True,
                     ignore_small_neg=True
                 )
-
-
-
