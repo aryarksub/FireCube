@@ -15,7 +15,7 @@ pd.set_option('mode.chained_assignment', None)
 
 dir_feds25 = os.path.join('inputData', 'Full_FEDS')
 dir_firepix = os.path.join('inputData', 'firepix')
-feds_firelist = os.path.join('inputData', 'fireslist2012-2023_MTBSfull.csv')
+feds_firelist = os.path.join('inputData', 'fireslist2012-2024.csv')
 
 def set_gdffile(event_id):
     """
