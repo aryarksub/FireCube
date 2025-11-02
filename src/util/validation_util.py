@@ -34,6 +34,39 @@ def find_landfire_layer_file(abbrev, lf_dir):
             return file
     return None
 
+def get_tif_spatial_properties(src):
+    """
+    Given an opened TIF file (dataset reader), i.e. the output of rasterio.open(...), get the spatial area properties
+    of the TIF. This includes the coordinates of the top-left pixel, the spatial width, and spatial height.
+    
+    Args:
+        src (rasterio.DatasetReader): Dataset reader of an opened TIF file
+
+    Returns:
+        tuple: Tuple (x, y, w, h) where (x,y) is the coordinates of the top-left corner of the top-left pixel,
+        w is the spatial width of the TIF, and h is the spatial height of the TIF
+    """
+
+    # transform = Affine object whose matrix is represented by 6 parameters:
+    # a = x-direction pixel width
+    # b = row rotation (typically 0)
+    # c = x-coordinate of upper-left corner of upper-left pixel
+    # d = column rotation (typically 0)
+    # e = y-direction pixel height (negative value for north-up images)
+    # f = y-coordinate of upper-left corner of upper-left pixel
+    transform = src.transform
+    width = src.width
+    height = src.height
+
+    top_left = (transform.c, transform.f)
+    x_max = transform.c + width * transform.a
+    y_min = transform.f + height * transform.e
+
+    spatial_width = abs(x_max - transform.c)
+    spatial_height = abs(transform.f - y_min)
+
+    return *top_left, spatial_width, spatial_height
+
 def validate_one_fire_data(fid, layer_data_dict=None):
     """
     Determine whether the downloaded data for the given fire (fid) is valid. Validation is done by checking that the data
@@ -51,9 +84,10 @@ def validate_one_fire_data(fid, layer_data_dict=None):
         FileNotFoundError: Occurs when there is no TIF file for a certain layer.
 
     Returns:
-        tuple: Tuple of a boolean and a list. The boolean takes a True value if the fire data is valid; False otherwise.
-         The list contains tuples of the form (layer, band, indices). These store the invalid layers, the time band at
-         which the data is invalid, and the indices in the 2D TIF data array that are invalid.
+        tuple: Tuple of a boolean and two lists. The boolean takes a True value if the fire data is valid; False otherwise.
+         The first list contains tuples of the form (layer, band, indices). These store the invalid layers, the time band at
+         which the data is invalid, and the indices in the 2D TIF data array that are invalid. The second list contains
+         the names of layers that have unexpected spatial properties as compared to other layers.
     """
 
     # If no layer data dictionary is specified, then obtain it with get_layer_range_data()
@@ -66,6 +100,9 @@ def validate_one_fire_data(fid, layer_data_dict=None):
     
     invalid_layers = []
     evt_found = False
+
+    expected_spatial_properties = None
+    invalid_layers_spatial = []
     
     for layer, layer_data in layer_data_dict.items():
         # Since there are multiple potential EVT layers (LANDFIRE), if we have already found data for one, skip the others
@@ -111,6 +148,18 @@ def validate_one_fire_data(fid, layer_data_dict=None):
         
         # Data validation for each band in TIF
         with rasterio.open(layer_tif) as src:
+            # Store spatial properties of first layer TIF
+            if expected_spatial_properties is None:
+                expected_spatial_properties = get_tif_spatial_properties(src=src)
+            # Validate all other TIF spatial properties with the stored properties
+            else:
+                spatial_properties = get_tif_spatial_properties(src=src)
+                if not np.allclose(
+                    np.array(expected_spatial_properties, dtype=float).ravel(), 
+                    np.array(spatial_properties, dtype=float).ravel()
+                ):
+                    invalid_layers_spatial.append((layer, expected_spatial_properties, spatial_properties))
+
             for band in range(src.count):
                 # Band counting is 1-indexed
                 data = src.read(band + 1)
@@ -127,7 +176,7 @@ def validate_one_fire_data(fid, layer_data_dict=None):
                     invalid_layers.append((layer, band+1, invalid_locations))
                     break
         
-    return len(invalid_layers) == 0, invalid_layers
+    return len(invalid_layers) == 0 and len(invalid_layers_spatial) == 0, invalid_layers, invalid_layers_spatial
 
 
 def validate_existing_fires(layer_data_dict=None, verbose=False):
@@ -141,8 +190,8 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
         verbose (bool, optional): True if descriptive messages should be printed; False otherwise. Defaults to False.
 
     Returns:
-        list: List of tuples of the form (fid, invalid_layers), where fid corresponds to a fire event ID with invalid
-         data and invalid_layers is the list returned by validate_one_fire_data().
+        list: List of tuples where the first entry in each tuple corresponds to a fire event ID with invalid data and the
+        remaining entries in each tuple correspond to the lists returned by validate_one_fire_data().
     """
     # If no layer data dictionary is specified, then obtain it with get_layer_range_data()
     layer_data_dict = layer_data_dict if layer_data_dict is not None else get_layer_range_data()
@@ -153,9 +202,9 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
     # Note that folders are named with the fire event ID (so folder = FID)
     for folder in os.listdir(output_cubes_dir):
         if os.path.isdir(os.path.join(output_cubes_dir, folder)):
-            valid_data, invalid_layers = validate_one_fire_data(folder, layer_data_dict)
+            valid_data, invalid_layers, invalid_layers_spatial = validate_one_fire_data(folder, layer_data_dict)
             if not valid_data:
-                invalid_fires.append((folder, invalid_layers))
+                invalid_fires.append((folder, invalid_layers, invalid_layers_spatial))
 
                 if verbose:
                     print(f'Fire {folder} has invalid data')
@@ -177,8 +226,10 @@ if __name__ == '__main__':
 
     # To validate one fire specified here
     if single_fire:
-        valid_data, invalid_layers = validate_one_fire_data(fire_id, layer_data)
+        valid_data, invalid_layers, invalid_layers_spatial = validate_one_fire_data(fire_id, layer_data)
         for layer in invalid_layers:
+            print(layer)
+        for layer in invalid_layers_spatial:
             print(layer)
         print(f'Fire {fire_id} has {"" if valid_data else "in"}valid data')
     else:
