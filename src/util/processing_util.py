@@ -8,40 +8,58 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 import xarray as xr
 
-def bufferbnds(bnds,res=0.005,bufgd=1):
-    ''' create new bounds with res that enclose the original bounds
+def bufferbnds(bnds, res=0.005, bufgd=1):
+    """
+    Create new bounds with the given resolution (in degrees) and grid buffer that enclose the original bounds.
 
-    Parameters
-    ----------
-    bnds : list
-        [lon0,lat0,lon1,lat1] of the original bounds
-    res : float
-        grid resolution
-    bufgd : int 
-        the buffer (in number of grids with res)
+    Args:
+        bnds (list): Original bounds, listed in the order of minimum longitude, minimum latitude, maximum
+         longitude, and maximum latitude.
+        res (float, optional): Grid resolution in degrees. Defaults to 0.005.
+        bufgd (int, optional): Buffer pixels (in terms of resolution). Defaults to 1.
 
-    Returns
-    -------
-    bufferedbnds : list
-        [lon0,lat0,lon1,lat1] of the new bounds
-    '''
-
-    # derive grid bounds
-    lat0 = np.floor(bnds[1]/res-bufgd)*res 
-    lon0 = np.floor(bnds[0]/res-bufgd)*res 
-    lat1 = np.ceil(bnds[3]/res+bufgd)*res 
-    lon1 = np.ceil(bnds[2]/res+bufgd)*res
+    Returns:
+        list: New bounds, listed in the order of minimum longitude, minimum latitude, maximum longitude, 
+        and maximum latitude.
+    """
+    # Derive grid bounds
+    lon0 = np.floor(bnds[0] / res - bufgd) * res 
+    lat0 = np.floor(bnds[1] / res - bufgd) * res
+    lon1 = np.ceil(bnds[2] / res + bufgd) * res 
+    lat1 = np.ceil(bnds[3] / res + bufgd) * res 
 
     bufferedbnds = [lon0,lat0,lon1,lat1]
     return bufferedbnds
 
 def add_time_buffers(df_t):
-    # add 1-day buffer at the beginning and the end
+    """
+    Add a one-day buffer to the beginning and end of the given time Series. Four new timestamps will be added: 24 hours
+    before the beginning, 12 hours before the beginning, 12 hours after the end, 24 hours after the end.
+
+    Args:
+        df_t (pandas.Series): Series of timestamps
+
+    Returns:
+        pandas.Series: Series of timestamps with a one day buffer
+    """
+    # Add 1-day buffer at the beginning and the end
     pds1 = pd.Series([df_t.min()+timedelta(days=-1),df_t.min()+timedelta(hours=-12)], index=[-1,-2])
     pds2 = pd.Series([df_t.max()+timedelta(hours=12),df_t.max()+timedelta(days=1)], index=[-3,-4])
     return pds1._append(df_t)._append(pds2)
 
 def clean_xr_dataset_by_times(ds, start_time, end_time):
+    """
+    Clean the given xarray Dataset by removing times outside the given start to end timeframe and dropping entries
+    with duplicate timestamps.
+
+    Args:
+        ds (xarray.Dataset): Multi-layer dataset with data recorded at several time-steps.
+        start_time (pandas.Timestamp): Timestamp of the start time of the valid timeframe
+        end_time (pandas.Timestamp): Timestamp of the end time of the valid timeframe
+
+    Returns:
+        xarray.Dataset: Cleaned dataset with unique data-time pairings within the given timeframe
+    """
     time_vals = ds['time'].values
     step_vals = ds['step'].values
     valid_times = ds['valid_time'].values
@@ -101,6 +119,14 @@ def clean_xr_dataset_by_times(ds, start_time, end_time):
     return ds_filtered
 
 def change_tif_crs(in_tif_file, out_tif_file, new_crs):
+    """
+    Change the coordinate reference system (CRS) of a given TIF file to a (new) given CRS.
+
+    Args:
+        in_tif_file (str): Path to the original TIF file.
+        out_tif_file (str): Path to the new TIF file (with the new CRS).
+        new_crs (str): EPSG code of the new CRS (e.g. "EPSG:5070")
+    """
     with rasterio.open(in_tif_file) as src:
         transform, width, height = calculate_default_transform(
             src.crs, new_crs, src.width, src.height, *src.bounds
@@ -126,6 +152,22 @@ def change_tif_crs(in_tif_file, out_tif_file, new_crs):
                 )
 
 def resample_tif(in_tif, out_tif, target_res=None, catype=False):
+    """
+    Resample the given TIF to the given target resolution using either nearest-neighbor or bilinear resampling.
+    If no target resolution is given, then the default resolution used is the closest multiple of 30 to the
+    current TIF resolution.
+
+    Args:
+        in_tif (str): Path to the input TIF that needs to be resampled.
+        out_tif (str): Path to the output TIF where resampled data will be written.
+        target_res (float, optional): Target resolution for resampling. If None, then the target resolution
+         will be the closest multiple of 30 to the original resolution. Defaults to None.
+        catype (bool, optional): True if the resampling method should be nearest-neighbor; False if the resampling
+         method should be bilinear. Defaults to False.
+
+    Raises:
+        ValueError: Occurs if the input TIF file has a non-projected CRS
+    """
     resample_method = Resampling.nearest if catype else Resampling.bilinear
 
     with rasterio.open(in_tif) as src:
@@ -142,6 +184,7 @@ def resample_tif(in_tif, out_tif, target_res=None, catype=False):
         if not crs.is_projected:
             raise ValueError("CRS must be projected (e.g., UTM) to use meters.")
         
+        # If no target resolution is provided, use the closest multiple of 30 to the original resolution
         if target_res is None:
             target_res = round(pixel_width / 30) * 30
 
@@ -149,7 +192,7 @@ def resample_tif(in_tif, out_tif, target_res=None, catype=False):
         new_width = int((width * pixel_width) // target_res)
         new_height = int((height * pixel_height) // target_res)
 
-        # New transform — same origin, new resolution
+        # New transform - same origin, new resolution
         new_transform = Affine(
             target_res, 0, transform.c,
             0, -target_res, transform.f
@@ -173,6 +216,15 @@ def resample_tif(in_tif, out_tif, target_res=None, catype=False):
                 dst.write(band_data, i)
 
 def crop_tif_based_on_area(in_tif, out_tif, bounds):
+    """
+    Crop the given TIF to the specified bounds.
+
+    Args:
+        in_tif (str): Path of the input TIF file to be cropped.
+        out_tif (str): Path where the output (cropped) TIF file will be saved.
+        bounds (list): List of bounding box coordinates in the same CRS as the input TIF. There should be
+         four coordinates: x_min, y_min, x_max, y_max.
+    """
     with rasterio.open(in_tif) as src:
         # Create a window from the bounding box
         x1,y1,x2,y2 = bounds
@@ -198,15 +250,35 @@ def crop_tif_based_on_area(in_tif, out_tif, bounds):
             dst.write(data)
 
 def get_coarsest_resolution(tifs):
+    """
+    Determine the largest/coarsest spatial resolution for the given TIF files.
+
+    Args:
+        tifs (list): List of paths to TIF files.
+
+    Returns:
+        float: Coarsest/maximum spatial resolution among the given TIFs.
+    """
     max_res = 0
     for tif in tifs:
         with rasterio.open(tif) as src:
             res_x, res_y = src.res
+            # Ensure pixels are squar
             assert res_x == res_y
             max_res = max(max_res, res_x)
     return max_res
 
 def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
+    """
+    Centers and crops the given TIFs to the same spatial area (given by bounds).
+
+    Args:
+        in_tifs (list): List of paths to input TIF files.
+        out_tifs (list): List of paths to output (cropped and centered) TIF files.
+        bounds (list): List of bounding box coordinates in the same CRS as the input TIF. There should be
+         four coordinates: x_min, y_min, x_max, y_max.
+    """
+    # Basic assertions
     assert len(in_tifs) == len(out_tifs) and len(bounds) == 4
 
     x1,y1,x2,y2 = bounds
@@ -241,6 +313,15 @@ def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
         crop_tif_based_on_area(in_tif, out_tif, (final_x1, final_y1, final_x2, final_y2))
 
 def pad_tif_to_bounds(in_tif, out_tif, bounds):
+    """
+    Pad the given TIF to fit the specified bounds while preserving the original data placement/resolution.
+
+    Args:
+        in_tif (str): Path of the input TIF file to be padded.
+        out_tif (str): Path where the output (padded) TIF file will be saved.
+        bounds (list): List of bounding box coordinates in the same CRS as the input TIF. There should be
+         four coordinates: x_min, y_min, x_max, y_max.
+    """
     with rasterio.open(in_tif) as src:
         original_data = src.read()
         original_bounds = src.bounds
@@ -282,6 +363,15 @@ def pad_tif_to_bounds(in_tif, out_tif, bounds):
             dst.write(padded_data)
 
 def get_tif_bounds(tif):
+    """
+    Get the bounding box for the given TIF.
+
+    Args:
+        tif (str): Path to the input TIF.
+
+    Returns:
+        np.array: NumPy array containing raster bounds [x_min, y_min, x_max, y_max]
+    """
     with rasterio.open(tif) as src:
         bounds = src.bounds
         return np.array([bounds.left, bounds.bottom, bounds.right, bounds.top])
