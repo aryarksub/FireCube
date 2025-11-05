@@ -131,10 +131,12 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         if verbose: print(f'Skipping FEDS data for fire {fid}')
 
     # Validate all downloaded data
-    valid_data, invalid_layers = valid_util.validate_one_fire_data(fid)
+    valid_data, invalid_layers, invalid_spatial_layers = valid_util.validate_one_fire_data(fid)
     if not valid_data:
         if verbose:
             for layer in invalid_layers:
+                print(layer)
+            for layer in invalid_spatial_layers:
                 print(layer)
         raise ValueError(f'Fire {fid} has invalid data')
 
@@ -272,6 +274,7 @@ def random_select_fids(n=10, size_threshold=None, duration_threshold=None):
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
+    temp_id = 'CA4194112400320230815'
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
@@ -286,11 +289,11 @@ if __name__=='__main__':
     if do_sample_fids:
         fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28)
     else:
-        fids_to_use = [zogg_id]
+        fids_to_use = [temp_id]
     
     # Standard procedure is to use del_sources=gen_util.data_sources to delete temporary created data files
     process_multiple_fires(
         fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
-        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=gen_util.data_sources,
+        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=[],#gen_util.data_sources,
         del_intermediate=False
     )

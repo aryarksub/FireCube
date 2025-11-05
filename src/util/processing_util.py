@@ -230,7 +230,7 @@ def crop_tif_based_on_area(in_tif, out_tif, bounds):
         x1,y1,x2,y2 = bounds
         window = from_bounds(x1, y1, x2, y2, transform=src.transform)
         # Round window bounds up to make sure we get the entire fire area
-        window = Window(window.col_off, window.row_off, int(np.ceil(window.width)), int(np.ceil(window.height)))
+        window = Window(window.col_off, window.row_off, int(round(window.width)), int(round(window.height)))
 
         # Read the data within the window
         data = src.read(window=window)
