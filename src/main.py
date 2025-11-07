@@ -122,10 +122,12 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     if do_feds:
         if verbose: print(f'Getting/Rasterizing FEDS data for fire {fid}')
         feds_util.driver_feds(
-            fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, plot_orig=False
+            fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, 
+            plot_orig=True if gen_util.subdir_feds in plot else False
         )
         feds_util.driver_frp(
-            fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, plot_orig=False
+            fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, 
+            plot_orig=True if gen_util.subdir_frp in plot else False
         )
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
@@ -224,12 +226,10 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
 
 def random_select_fids(n=10, size_threshold=None, duration_threshold=None):
     """
-    Select at most n fire event IDs from the entire list of fires based on a given size and duration threshold. If some of 
-    the n selected FIDs do not have FEDS fire line data, they will be removed. Thus, it is possible for the number of returned
-    FIDs to be less than n.
+    Select n fire event IDs from the entire list of fires based on a given size and duration threshold.
 
     Args:
-        n (int, optional): Maximum number of fire event IDs to return. Defaults to 10.
+        n (int, optional): Number of fire event IDs to return. Defaults to 10.
         size_threshold (int, optional): Upper bound of fire size in terms of burned area. Defaults to None.
         duration_threshold (int, optional): Upper bound of fire duration in days. Defaults to None.
 
@@ -259,22 +259,14 @@ def random_select_fids(n=10, size_threshold=None, duration_threshold=None):
             raise ValueError('Duration threshold for filtering must be at least 1 day')
     
     sample_fires = fires_df.sample(n=n)
-    sample_fids = set(sample_fires['Event_ID'])
-    
-    # Ensure that all fires selected have FEDS fireline data (some fires don't have this data)
-    fids_to_use = []
-    for fid in sample_fids:
-        fname = feds_util.set_gdffile(fid)
-        gdf = gpd.read_file(fname, layer='fireline')
-        if not gdf.empty:
-            fids_to_use.append(fid)
-    return fids_to_use
+    sample_fids = list(sample_fires['Event_ID'])
+    return sample_fids
 
 
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
-    temp_id = 'CA4194112400320230815'
+    temp_id = 'GA3316708349920140410' # fire with empty fline data
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True

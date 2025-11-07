@@ -141,6 +141,9 @@ def validate_one_fire_data(fid, layer_data_dict=None):
             layer_tif = os.path.join(layer_folder, f'{layer}.tif')
         
         if layer_tif is None or not os.path.exists(layer_tif):
+            # Acceptable if fire line data is missing for some fires
+            if layer == 'fline':
+                continue
             raise FileNotFoundError(f'No file for layer {layer} and fire {fid} exists')
         
         if 'evt' in layer:

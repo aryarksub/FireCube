@@ -219,6 +219,9 @@ def driver_feds(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, nu
         fire_end (pandas.Timestamp, optional): End time until which data should be rasterized. Defaults to None.
         num_hours (int, optional): Number of hours for which data should be rasterized. Defaults to None.
         plot_orig (bool, optional): True if FEDS data should be plotted; False otherwise. Defaults to False.
+
+    Raises:
+        ValueError: Occurs when fire perimeter or new fire pixel data is empty.
     """
     gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = read_1fire(fid)
     gdfs = {
@@ -235,6 +238,15 @@ def driver_feds(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, nu
         var_vid = gen_util.get_temp_data_video_filename(
             fid, var, dir_type=gen_util.dir_videos, data_source=gen_util.subdir_feds, var_type=gen_util.subdir_type_resample
         )
+
+        # Some fires do not have fire line data (because they are too small or satellite observations are sporadic), so
+        # just skip them. However, if fires do not have fire perimeter or new fire pixel data, this is a problem, so
+        # raise an error.
+        if gdfs[var].empty:
+            if var == 'fline':
+                continue
+            else:
+                raise ValueError(f'GDF for variable {var} is empty')
 
         # Save rasterized data to the temporary TIF file
         rasterize_gdf_and_save_as_tif(

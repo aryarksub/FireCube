@@ -1,6 +1,6 @@
 layer,category,min,max,nan
-fline,fire_spread,0,1,null
 fperim,fire_spread,0,1,null
+fline,fire_spread,0,1,null
 nfp,fire_spread,0,1,null
 frp,frp,0,5000,null
 adj,fuel_topo,0,1,null
