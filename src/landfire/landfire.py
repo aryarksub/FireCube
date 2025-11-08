@@ -128,13 +128,14 @@ def split_tifs_in_zip(zip_path, fid):
                         dst.write(band_data, 1)
                         dst.set_band_description(1, band_name)
 
-def get_lf_layers_given_vars_and_year(var_names, year):
+def get_lf_layers_given_vars_and_year(var_names, year, state):
     """
-    Get LANDFIRE layer name for the given variables and year.
+    Get LANDFIRE layer name for the given variables based on the fire year and state.
 
     Args:
         var_names (list): List of LANDFIRE variables.
         year (int): Year to use when determining version.
+        state (str): Abbreviation of the state for which LANDFIRE layer names need to be obtained.
 
     Returns:
         list: List of LANDFIRE layer names (one for each given variable).
@@ -168,9 +169,13 @@ def get_lf_layers_given_vars_and_year(var_names, year):
                     break
             else:
                 layer_name = latest_versions[var]
-        # ROADS only has one layer name (240ROADS_23)
+        # ROADS only has layer name 240ROADS_23 for CONUS
+        # Currently, the supposed layer for Alaska/Hawaii is 220ROADS_20, but this doesn't work, so skip for now
         elif var in ['ROADS']:
-            layer_name = '240ROADS_23'
+            if state in {'AK', 'HI'}:
+                continue
+            else:
+                layer_name = '240ROADS_23'
         # Other layer names are not supported by our code
         else:
             print(f'Layer for {var} not in existing cases; will not be included in data download')
@@ -195,7 +200,7 @@ def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
         RuntimeError: Occurs when LANDFIRE download failed.
     """
     # bounds should be in W,S,E,N format
-    layers = get_lf_layers_given_vars_and_year(var_names, int(fire_start.year))
+    layers = get_lf_layers_given_vars_and_year(var_names, int(fire_start.year), fid[:2])
     lf_zip_path = gen_util.get_lf_zip_filename(fid)
 
     download_success = download_landfire_data(

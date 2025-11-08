@@ -4,6 +4,7 @@ import os
 import rasterio
 
 output_cubes_dir = os.path.join('output', 'cubes')
+GLOBAL_NULL_VALUE = -9999
 
 def get_layer_range_data():
     """
@@ -128,10 +129,12 @@ def validate_one_fire_data(fid, layer_data_dict=None):
                     lf_layer_file = find_landfire_layer_file(layer.replace('f', 'fbfm'), layer_folder)
                     layer_tif = os.path.join(layer_folder, lf_layer_file)
                 # If layer files for 105/200evt cannot be found, skip since layer may be 220evt
-                elif layer == '105evt' or layer == '200evt':
+                # Note: Use "'105evt' in layer" instead of "layer == '105evt'"" since for Alaska/Hawaii, layer
+                # file names are prepended with either 'ak_' or 'hi_' (e.g. 'ak_105evt')
+                elif '105evt' in layer or '200evt' in layer:
                     continue
                 # Since 220evt is the last possible EVT layer, if it cannot be found, then the layer does not exist
-                elif layer == '220evt':
+                elif '220evt' in layer:
                     layer_tif = None
                 else:
                     layer_tif = None
@@ -143,6 +146,9 @@ def validate_one_fire_data(fid, layer_data_dict=None):
         if layer_tif is None or not os.path.exists(layer_tif):
             # Acceptable if fire line data is missing for some fires
             if layer == 'fline':
+                continue
+            # Acceptable for now if roads data is missing for Alaska/Hawaii fires
+            elif layer == 'roads' and (fid.startswith('AK') or fid.startswith('HI')):
                 continue
             raise FileNotFoundError(f'No file for layer {layer} and fire {fid} exists')
         
@@ -168,7 +174,7 @@ def validate_one_fire_data(fid, layer_data_dict=None):
                 data = src.read(band + 1)
                 # Allow null value if specified
                 if null_val:
-                    valid_data_mask = ((data >= min_val) & (data <= max_val)) | (data == null_val)
+                    valid_data_mask = ((data >= min_val) & (data <= max_val)) | (data == null_val) | (data == GLOBAL_NULL_VALUE)
                 else:
                     valid_data_mask = (data >= min_val) & (data <= max_val)
                 
@@ -231,7 +237,7 @@ if __name__ == '__main__':
     if single_fire:
         valid_data, invalid_layers, invalid_layers_spatial = validate_one_fire_data(fire_id, layer_data)
         for layer in invalid_layers:
-            print(layer)
+            print(layer[0], layer[1])
         for layer in invalid_layers_spatial:
             print(layer)
         print(f'Fire {fire_id} has {"" if valid_data else "in"}valid data')

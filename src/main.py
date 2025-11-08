@@ -239,8 +239,8 @@ def random_select_fids(n=10, size_threshold=None, duration_threshold=None):
     Returns:
         list: List of FIDs that meet the given size/duration thresholds.
     """
-    # Filter out Alaska/Hawaii since LANDFIRE operational roads data is only pulled for CONUS
-    fires_df = firelist[~firelist['Event_ID'].str.startswith(('AK', 'HI'))]
+    # Filter out Hawaii due to data validation issues (NaN layer values)
+    fires_df = firelist[~firelist['Event_ID'].str.startswith('HI')]
 
     # Filter based on size threshold if it is provided
     if size_threshold is not None:
@@ -266,7 +266,7 @@ def random_select_fids(n=10, size_threshold=None, duration_threshold=None):
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
-    temp_id = 'GA3316708349920140410' # fire with empty fline data
+    temp_id = 'AK6593314103320120625' # alaska fire
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
@@ -276,7 +276,7 @@ if __name__=='__main__':
     
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
-    do_sample_fids = True
+    do_sample_fids = False
 
     if do_sample_fids:
         fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28)
