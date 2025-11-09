@@ -93,7 +93,7 @@ def download_ERA5_reg(fid, df_t, bnds, varERA5=['2m_temperature'], fnmERA5='./ER
     # Merge all GRIB files into one dataset
     ds = xr.open_mfdataset(temp_file_prefix + '*.grib', engine='cfgrib')
     # Clean the dataset: Only keep times within the desired period and remove data for duplicated times
-    ds_clean = proc_util.clean_xr_dataset_by_times(ds, df_t.min(), df_t.max())
+    ds_clean = proc_util.clean_xr_dataset_by_times(ds, df_t.min(), df_t.max(), replace_nan=True)
     # Convert dataset to NetCDF
     ds_clean.to_netcdf(fnmERA5)
 

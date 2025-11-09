@@ -248,8 +248,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
     """
     existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
 
-    # Filter out Hawaii due to data validation issues (NaN layer values)
-    fires_df = firelist[~firelist['Event_ID'].str.startswith('HI')]
+    fires_df = firelist.copy(deep=True)
 
     # If we should avoid selecting FIDs for fires whose data already exists, then mask these FIDs out
     if skip_exist:
@@ -290,7 +289,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
-    temp_id = 'AK6593314103320120625' # alaska fire
+    temp_id = 'HI2084715648720190711'
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
@@ -303,7 +302,7 @@ if __name__=='__main__':
     do_sample_fids = True
 
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=3, size_threshold=100000, duration_threshold=28, method='size')
+        fids_to_use = random_select_fids(n=3, size_threshold=100000, duration_threshold=28, method='random')
     else:
         fids_to_use = [temp_id]
     

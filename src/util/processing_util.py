@@ -8,6 +8,8 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 import xarray as xr
 
+from util.validation_util import GLOBAL_NULL_VALUE
+
 def bufferbnds(bnds, res=0.005, bufgd=1):
     """
     Create new bounds with the given resolution (in degrees) and grid buffer that enclose the original bounds.
@@ -47,7 +49,7 @@ def add_time_buffers(df_t):
     pds2 = pd.Series([df_t.max()+timedelta(hours=12),df_t.max()+timedelta(days=1)], index=[-3,-4])
     return pds1._append(df_t)._append(pds2)
 
-def clean_xr_dataset_by_times(ds, start_time, end_time):
+def clean_xr_dataset_by_times(ds, start_time, end_time, replace_nan=False):
     """
     Clean the given xarray Dataset by removing times outside the given start to end timeframe and dropping entries
     with duplicate timestamps.
@@ -56,6 +58,8 @@ def clean_xr_dataset_by_times(ds, start_time, end_time):
         ds (xarray.Dataset): Multi-layer dataset with data recorded at several time-steps.
         start_time (pandas.Timestamp): Timestamp of the start time of the valid timeframe
         end_time (pandas.Timestamp): Timestamp of the end time of the valid timeframe
+        replace_nan (bool, optional): True if NaN values in the dataset should be replaced by a global null
+         value (-9999); False otherwise. Defaults to False.
 
     Returns:
         xarray.Dataset: Cleaned dataset with unique data-time pairings within the given timeframe
@@ -73,7 +77,9 @@ def clean_xr_dataset_by_times(ds, start_time, end_time):
                 is_valid = True
                 for var in ds.data_vars:
                     val = ds[var].isel(time=i, step=j).values
-                    if np.isnan(val).any():
+                    # Even if there are NaN values, if we wish to replace them (replace_nan=True), then 
+                    # treat the record as valid
+                    if np.isnan(val).any() and not replace_nan:
                         is_valid = False
                         break
                 if is_valid:
@@ -111,6 +117,8 @@ def clean_xr_dataset_by_times(ds, start_time, end_time):
         data = ds[var].values  # shape: (time, step, lat, lon)
         # Get the data where mask is True, and reshape to (valid_time, lat, lon)
         filtered_data = data[mask]  # shape: (valid_time, lat, lon)
+        if replace_nan:
+            filtered_data = np.nan_to_num(filtered_data, nan=GLOBAL_NULL_VALUE)
         ds_filtered[var] = xr.DataArray(filtered_data, dims=('valid_time', 'latitude', 'longitude'),
                                     coords={'valid_time': valid_time_vals,
                                             'latitude': ds.latitude,
