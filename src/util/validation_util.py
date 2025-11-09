@@ -5,6 +5,14 @@ import rasterio
 
 output_cubes_dir = os.path.join('output', 'cubes')
 GLOBAL_NULL_VALUE = -9999
+BATCH_RESOLUTION_MAP = {
+    "fire_spread" : 300,
+    "frp" : 300,
+    "fuel_topo" : 30,
+    "high_res_climate" : 600,
+    "landfire" : 30,
+    "low_res_climate" : 9000
+}
 
 def get_layer_range_data():
     """
@@ -88,7 +96,8 @@ def validate_one_fire_data(fid, layer_data_dict=None):
         tuple: Tuple of a boolean and two lists. The boolean takes a True value if the fire data is valid; False otherwise.
          The first list contains tuples of the form (layer, band, indices). These store the invalid layers, the time band at
          which the data is invalid, and the indices in the 2D TIF data array that are invalid. The second list contains
-         the names of layers that have unexpected spatial properties as compared to other layers.
+         the names of layers that have unexpected spatial properties as compared to other layers. It also contains the 
+         names of layers whose correspond TIF has unexpected resolution.
     """
 
     # If no layer data dictionary is specified, then obtain it with get_layer_range_data()
@@ -168,6 +177,12 @@ def validate_one_fire_data(fid, layer_data_dict=None):
                     np.array(spatial_properties, dtype=float).ravel()
                 ):
                     invalid_layers_spatial.append((layer, expected_spatial_properties, spatial_properties))
+
+            # Make sure layer TIF has the expected resolution based on the layer category (batch)
+            expected_res = BATCH_RESOLUTION_MAP[category]
+            actual_res = src.transform.a
+            if expected_res != actual_res:
+                invalid_layers_spatial.append((layer, expected_res, actual_res))
 
             for band in range(src.count):
                 # Band counting is 1-indexed

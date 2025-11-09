@@ -276,7 +276,7 @@ if __name__=='__main__':
     
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
-    do_sample_fids = False
+    do_sample_fids = True
 
     if do_sample_fids:
         fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28)

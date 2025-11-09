@@ -160,7 +160,7 @@ def driver_pyregence(fid, fire_center, fire_start, fire_hours, plot_types=[]):
         # Change CRS of original data to EPSG:5070
         proc_util.change_tif_crs(pyr_var_fnames[0], pyr_var_fnames[1], 'EPSG:5070')
         # Resample CRS-converted data to resolution defined in resample_tif
-        # For fuel/topography data, resample to 600m; for high-res climate data, resample to 30m
+        # For fuel/topography data, resample to 30m; for high-res climate data, resample to 600m
         # Use 30 or 600 based on which is closer to original resolution of CRS-converted data
         with rasterio.open(pyr_var_fnames[1]) as src:
             original_res = src.transform.a
