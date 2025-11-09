@@ -224,23 +224,36 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
             if verbose:
                 print(f'Error when reading file {fid_file} - no processing will be done')
 
-def random_select_fids(n=10, size_threshold=None, duration_threshold=None):
+def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method='random', skip_exist=True):
     """
-    Select n fire event IDs from the entire list of fires based on a given size and duration threshold.
+    Select n fire event IDs from the entire list of fires based on a given size and duration threshold. Selection
+    can be done either randomly (method='random') or by selecting the largest fires (method='size'). If the number
+    of available fires to download is less than n, then the output size will be the number of available fires
+    instead of n.
 
     Args:
         n (int, optional): Number of fire event IDs to return. Defaults to 10.
         size_threshold (int, optional): Upper bound of fire size in terms of burned area. Defaults to None.
         duration_threshold (int, optional): Upper bound of fire duration in days. Defaults to None.
+        method (str, optional): Method by which FIDs should be selected (random, size). Defaults to 'random'.
+        skip_exist (bool, optional): True if FIDs that already have downloaded data should be exempt from 
+         selection; False otherwise. Defaults to True.
 
     Raises:
         ValueError: Occurs when the size threshold is less than 1000 or the duration threshold is less than 1.
+        NotImplementedError: Occurs when the given selection method is not supported.
 
     Returns:
         list: List of FIDs that meet the given size/duration thresholds.
     """
+    existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
+
     # Filter out Hawaii due to data validation issues (NaN layer values)
     fires_df = firelist[~firelist['Event_ID'].str.startswith('HI')]
+
+    # If we should avoid selecting FIDs for fires whose data already exists, then mask these FIDs out
+    if skip_exist:
+        fires_df = fires_df[~fires_df['Event_ID'].isin(existing_fids)]
 
     # Filter based on size threshold if it is provided
     if size_threshold is not None:
@@ -257,9 +270,20 @@ def random_select_fids(n=10, size_threshold=None, duration_threshold=None):
             ]
         else:
             raise ValueError('Duration threshold for filtering must be at least 1 day')
+        
+    # Select n FIDs if there are that many; otherwise, select all available FIDs
+    num_to_select = min(n, fires_df.shape[0])
     
-    sample_fires = fires_df.sample(n=n)
-    sample_fids = list(sample_fires['Event_ID'])
+    if method == 'random':
+        sample_fires = fires_df.sample(n=num_to_select)
+        sample_fids = list(sample_fires['Event_ID'])
+    elif method == 'size':
+        sorted_df = fires_df.sort_values(by='BurnBndAc', ascending=False)
+        top_n = sorted_df.head(num_to_select)
+        sample_fids = list(top_n['Event_ID'])
+    else:
+        raise NotImplementedError(f'The given selection method {method} is not supported')
+
     return sample_fids
 
 
@@ -279,7 +303,7 @@ if __name__=='__main__':
     do_sample_fids = True
 
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28)
+        fids_to_use = random_select_fids(n=3, size_threshold=100000, duration_threshold=28, method='size')
     else:
         fids_to_use = [temp_id]
     

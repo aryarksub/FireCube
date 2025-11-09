@@ -238,6 +238,9 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
             if verbose and processed_count % 10 == 0:
                 print(f'Validated {processed_count} fires')
     
+    if verbose:
+        print(f'Done with validation ... Validated {processed_count} fires')
+    
     return invalid_fires
 
 if __name__ == '__main__':
