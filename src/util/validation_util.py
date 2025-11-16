@@ -4,6 +4,7 @@ import os
 import rasterio
 
 output_cubes_dir = os.path.join('output', 'cubes')
+layer_range_file = os.path.join('inputData', 'layer_ranges.csv')
 GLOBAL_NULL_VALUE = -9999
 BATCH_RESOLUTION_MAP = {
     "fire_spread" : 300,
@@ -23,7 +24,7 @@ def get_layer_range_data():
     Returns:
         dict: Dictionary of layer information.
     """
-    layer_range_df = pd.read_csv('inputData\layer_ranges.csv')
+    layer_range_df = pd.read_csv(layer_range_file)
     key = 'layer'
     return layer_range_df.set_index(key).to_dict(orient='index')
 
