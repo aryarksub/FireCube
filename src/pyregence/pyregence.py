@@ -23,6 +23,39 @@ def get_cloudfire_channel():
         cloudfire_server ='worldgen.cloudfire.io'
     return cloudfire_server + ':50052'
 
+def get_landfire_version(start_time):
+    """
+    Get the LANDFIRE version for fires in the given year (based on start_time). Version naming
+    conventions are given here: https://www.landfire.gov/LFNameConvention.
+
+    Args:
+        start_time (pd.Timestamp): Start time from which data should be obtained.
+
+    Raises:
+        ValueError: Occurs when no valid LANDFIRE version mapping exists for the given start year.
+
+    Returns:
+        str: LANDFIRE version for the given start time/year.
+    """
+    # Landfire versioninig based on this naming guide: https://www.landfire.gov/LFNameConvention
+    year = start_time.year
+    lf_year_for_fire = year - 1
+    lf_year_to_version_map = {
+        2024 : '2.5.0',
+        2023 : '2.4.0',
+        2022 : '2.3.0',
+        2020 : '2.2.0',
+        2016 : '2.0.0',
+        2014 : '1.4.0'
+    }
+    version_to_use = None
+    for lf_base_year in lf_year_to_version_map:
+        if lf_year_for_fire <= lf_base_year:
+            version_to_use = lf_year_to_version_map[lf_base_year]
+    if version_to_use is None:
+        raise ValueError(f'No valid LANDFIRE mapping for given year {year} (with LF year {lf_year_for_fire})')
+    return version_to_use
+
 def download_pyregence_data(
         out_dir, out_file, center, buffer=(60,60,60,60), wx_start_time=None, wx_num_hours=24, redo=False
 ):
@@ -57,6 +90,9 @@ def download_pyregence_data(
     # Convert buffer from kilometers to meters
     west_buffer, east_buffer, south_buffer, north_buffer = [1000*buf for buf in buffer]
 
+    # Get correct LANDFIRE version
+    lf_version = get_landfire_version(wx_start_time)
+
     with grpc.insecure_channel(cloudfire_channel) as channel:
         stub = fuel_wx_ign_pb2_grpc.FuelWxIgnStub(channel)
         response = stub.GetDomainData(fuel_wx_ign_pb2.Request( name = out_file ,
@@ -69,7 +105,7 @@ def download_pyregence_data(
                                                                # get fuel data
                                                                do_fuel = True, 
                                                                fuel_source = 'landfire',
-                                                               fuel_version = '2.4.0',
+                                                               fuel_version = lf_version,
                                                                # get wind data
                                                                do_wx = True, 
                                                                # historical is needed to get fires in the past

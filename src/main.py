@@ -132,6 +132,8 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
 
+    # TODO: convert all null values (-1/-9999) to np.nan
+
     # Validate all downloaded data
     valid_data, invalid_layers, invalid_spatial_layers = valid_util.validate_one_fire_data(fid)
     if not valid_data:
@@ -302,7 +304,7 @@ if __name__=='__main__':
     do_sample_fids = True
 
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=3, size_threshold=100000, duration_threshold=28, method='random')
+        fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='random')
     else:
         fids_to_use = [temp_id]
     

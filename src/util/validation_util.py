@@ -190,6 +190,7 @@ def validate_one_fire_data(fid, layer_data_dict=None):
                 data = src.read(band + 1)
                 # Allow null value if specified
                 if null_val:
+                    # TODO: remove null/global null checks, if null: then allow data == np.nan
                     valid_data_mask = ((data >= min_val) & (data <= max_val)) | (data == null_val) | (data == GLOBAL_NULL_VALUE)
                 else:
                     valid_data_mask = (data >= min_val) & (data <= max_val)
