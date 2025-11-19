@@ -91,14 +91,14 @@ def validate_one_fire_data(fid, layer_data_dict=None):
     Raises:
         NotADirectoryError: Occurs when there is no directory for the given fire (fid) or there is no directory for
          a certain layer category.
-        FileNotFoundError: Occurs when there is no TIF file for a certain layer.
 
     Returns:
-        tuple: Tuple of a boolean and two lists. The boolean takes a True value if the fire data is valid; False otherwise.
+        tuple: Tuple of a boolean and three lists. The boolean takes a True value if the fire data is valid; False otherwise.
          The first list contains tuples of the form (layer, band, indices). These store the invalid layers, the time band at
          which the data is invalid, and the indices in the 2D TIF data array that are invalid. The second list contains
          the names of layers that have unexpected spatial properties as compared to other layers. It also contains the 
-         names of layers whose correspond TIF has unexpected resolution.
+         names of layers whose correspond TIF has unexpected resolution. The third list contains the names of layers that
+         are missing (i.e. no TIF files).
     """
 
     # If no layer data dictionary is specified, then obtain it with get_layer_range_data()
@@ -114,6 +114,7 @@ def validate_one_fire_data(fid, layer_data_dict=None):
 
     expected_spatial_properties = None
     invalid_layers_spatial = []
+    missing_layers = []
     
     for layer, layer_data in layer_data_dict.items():
         # Since there are multiple potential EVT layers (LANDFIRE), if we have already found data for one, skip the others
@@ -154,13 +155,15 @@ def validate_one_fire_data(fid, layer_data_dict=None):
             layer_tif = os.path.join(layer_folder, f'{layer}.tif')
         
         if layer_tif is None or not os.path.exists(layer_tif):
-            # Acceptable if fire line data is missing for some fires
-            if layer == 'fline':
-                continue
-            # Acceptable for now if roads data is missing for Alaska/Hawaii fires
-            elif layer == 'roads' and (fid.startswith('AK') or fid.startswith('HI')):
-                continue
-            raise FileNotFoundError(f'No file for layer {layer} and fire {fid} exists')
+            missing_layers.append(layer)
+            continue
+            # # Acceptable if fire line data is missing for some fires
+            # if layer == 'fline':
+            #     continue
+            # # Acceptable for now if roads data is missing for Alaska/Hawaii fires
+            # elif layer == 'roads' and (fid.startswith('AK') or fid.startswith('HI')):
+            #     continue
+            # raise FileNotFoundError(f'No file for layer {layer} and fire {fid} exists')
         
         if 'evt' in layer:
             evt_found = True
@@ -191,7 +194,7 @@ def validate_one_fire_data(fid, layer_data_dict=None):
                 # Allow null value if specified
                 if null_val:
                     # TODO: remove null/global null checks, if null: then allow data == np.nan
-                    valid_data_mask = ((data >= min_val) & (data <= max_val)) | (data == null_val) | (data == GLOBAL_NULL_VALUE)
+                    valid_data_mask = ((data >= min_val) & (data <= max_val)) | (np.isnan(data))
                 else:
                     valid_data_mask = (data >= min_val) & (data <= max_val)
                 
@@ -202,7 +205,7 @@ def validate_one_fire_data(fid, layer_data_dict=None):
                     invalid_layers.append((layer, band+1, invalid_locations))
                     break
         
-    return len(invalid_layers) == 0 and len(invalid_layers_spatial) == 0, invalid_layers, invalid_layers_spatial
+    return len(invalid_layers) == 0 and len(invalid_layers_spatial) == 0, invalid_layers, invalid_layers_spatial, missing_layers
 
 
 def validate_existing_fires(layer_data_dict=None, verbose=False):
@@ -228,9 +231,9 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
     # Note that folders are named with the fire event ID (so folder = FID)
     for folder in os.listdir(output_cubes_dir):
         if os.path.isdir(os.path.join(output_cubes_dir, folder)):
-            valid_data, invalid_layers, invalid_layers_spatial = validate_one_fire_data(folder, layer_data_dict)
+            valid_data, invalid_layers, invalid_layers_spatial, missing_layers = validate_one_fire_data(folder, layer_data_dict)
             if not valid_data:
-                invalid_fires.append((folder, invalid_layers, invalid_layers_spatial))
+                invalid_fires.append((folder, invalid_layers, invalid_layers_spatial, missing_layers))
 
                 if verbose:
                     print(f'Fire {folder} has invalid data')
@@ -246,20 +249,21 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
     return invalid_fires
 
 if __name__ == '__main__':
-    fire_id = 'CO4078210783620180629'
+    fire_id = 'NV4069711993420170830'
 
     layer_data = get_layer_range_data()
 
     # True if only one fire needs to be validated (fire_id); False if all stored fires need to be validated
-    single_fire = False
+    single_fire = True
 
     # To validate one fire specified here
     if single_fire:
-        valid_data, invalid_layers, invalid_layers_spatial = validate_one_fire_data(fire_id, layer_data)
+        valid_data, invalid_layers, invalid_layers_spatial, missing_layers = validate_one_fire_data(fire_id, layer_data)
         for layer in invalid_layers:
-            print(layer[0], layer[1])
+            print(layer)
         for layer in invalid_layers_spatial:
             print(layer)
+        print(missing_layers)
         print(f'Fire {fire_id} has {"" if valid_data else "in"}valid data')
     else:
         invalid_fires = validate_existing_fires(layer_data_dict=layer_data, verbose=True)

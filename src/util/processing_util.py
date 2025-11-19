@@ -383,3 +383,45 @@ def get_tif_bounds(tif):
     with rasterio.open(tif) as src:
         bounds = src.bounds
         return np.array([bounds.left, bounds.bottom, bounds.right, bounds.top])
+    
+def convert_null_values_to_nan(in_tif, out_tif=None, null_values=[GLOBAL_NULL_VALUE]):
+    """
+    Convert all specified null values in the given input TIF file to np.nan and write the
+    modified data to the given output TIF file. If no output TIF is given, write the
+    modified data back to the input TIF.
+
+    Args:
+        in_tif (str): Path to input TIF.
+        out_tif (str, optional): Path to output TIF. Defaults to None.
+        null_values (list, optional): List of values to be treated as null. Defaults to [GLOBAL_NULL_VALUE].
+
+    Returns:
+        str: Path to output TIF.
+    """
+    # Open input
+    with rasterio.open(in_tif) as src:
+        data = src.read()  # Read as (bands, rows, cols)
+        meta = src.meta.copy()
+
+        # Include raster's built-in nodata value if present
+        if src.nodata is not None:
+            null_values = list(null_values) + [src.nodata]
+
+    # Convert to float so nan can exist
+    data = data.astype(float)
+
+    # Convert all specified null values to nan
+    for nv in null_values:
+        data[data == nv] = np.nan
+
+    # Output filename
+    if out_tif is None:
+        out_tif = in_tif
+
+    # Write output
+    meta.update(dtype='float32', nodata=np.nan)
+
+    with rasterio.open(out_tif, 'w', **meta) as dst:
+        dst.write(data.astype("float32"))
+
+    return out_tif

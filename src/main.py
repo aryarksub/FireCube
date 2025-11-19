@@ -132,20 +132,31 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
 
-    # TODO: convert all null values (-1/-9999) to np.nan
-
-    # Validate all downloaded data
-    valid_data, invalid_layers, invalid_spatial_layers = valid_util.validate_one_fire_data(fid)
-    if not valid_data:
-        if verbose:
-            for layer in invalid_layers:
-                print(layer)
-            for layer in invalid_spatial_layers:
-                print(layer)
-        raise ValueError(f'Fire {fid} has invalid data')
-
     # Get output TIF names (as stored in output/cubes directory)
     all_variable_input_tifs, all_variable_output_tifs = gen_util.get_all_var_and_output_tifs_for_fire(fid)
+
+    # Convert all null values (-1/-9999) to np.nan
+    for var_tif in all_variable_output_tifs:
+        # phi values are allowed to be -1, but this is considered null data for other variables
+        if 'phi' in var_tif:
+            proc_util.convert_null_values_to_nan(in_tif=var_tif, out_tif=var_tif)
+        else:
+            proc_util.convert_null_values_to_nan(in_tif=var_tif, out_tif=var_tif, null_values=[valid_util.GLOBAL_NULL_VALUE, -1])
+
+    # Validate all downloaded data
+    valid_data, invalid_layers, invalid_spatial_layers, missing_layers = valid_util.validate_one_fire_data(fid)
+    if not valid_data:
+        if verbose:
+            print('Layers with invalid data:')
+            for layer in invalid_layers:
+                print(layer)
+            print('Layers with invalid spatial info:')
+            for layer in invalid_spatial_layers:
+                print(layer)
+            print('Missing layers:')
+            for layer in missing_layers:
+                print(layer)
+        raise ValueError(f'Fire {fid} has invalid data')
 
     # Create batch plots
     if batch_plot:
@@ -291,7 +302,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
-    temp_id = 'HI2084715648720190711'
+    temp_id = 'NV4069711993420170830'
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
@@ -301,7 +312,7 @@ if __name__=='__main__':
     
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
-    do_sample_fids = True
+    do_sample_fids = False
 
     if do_sample_fids:
         fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='random')
@@ -311,6 +322,6 @@ if __name__=='__main__':
     # Standard procedure is to use del_sources=gen_util.data_sources to delete temporary created data files
     process_multiple_fires(
         fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
-        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=[],#gen_util.data_sources,
+        verbose=True, plot=plot_sources, batch_plot=True, all_plot=False, del_sources=gen_util.data_sources,
         del_intermediate=False
     )
