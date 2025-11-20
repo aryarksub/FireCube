@@ -147,16 +147,17 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     valid_data, invalid_layers, invalid_spatial_layers, missing_layers = valid_util.validate_one_fire_data(fid)
     if not valid_data:
         if verbose:
-            print('Layers with invalid data:')
-            for layer in invalid_layers:
-                print(layer)
-            print('Layers with invalid spatial info:')
-            for layer in invalid_spatial_layers:
-                print(layer)
-            print('Missing layers:')
-            for layer in missing_layers:
-                print(layer)
-        raise ValueError(f'Fire {fid} has invalid data')
+        #     print('Layers with invalid data:')
+        #     for layer in invalid_layers:
+        #         print(layer)
+        #     print('Layers with invalid spatial info:')
+        #     for layer in invalid_spatial_layers:
+        #         print(layer)
+        #     print('Missing layers:')
+        #     for layer in missing_layers:
+        #         print(layer)
+        # raise ValueError(f'Fire {fid} has invalid data')
+            print(f'Fire {fid} has invalid data')
 
     # Create batch plots
     if batch_plot:
@@ -220,11 +221,15 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
             print('No FIDs given - no processing will be done')
         return
     
+    count = 0
     if len(fid_list) > 0:
         if verbose:
             print('Processing fires given in list argument')
         for fid in fid_list:
             process_single_fire(fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate)
+            count += 1
+            if count % 20 == 0:
+                print(f'Processed {count} fires')
     else:
         if verbose:
             print('Processing fires given in file-path argument')
@@ -233,6 +238,9 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
                 for line in file:
                     fid = line.strip()
                     process_single_fire(fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate)
+                    count += 1
+                    if count % 20 == 0:
+                        print(f'Processed {count} fires')
         except:
             if verbose:
                 print(f'Error when reading file {fid_file} - no processing will be done')
@@ -298,7 +306,6 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 
     return sample_fids
 
-
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
@@ -312,7 +319,7 @@ if __name__=='__main__':
     
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
-    do_sample_fids = False
+    do_sample_fids = True
 
     if do_sample_fids:
         fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='random')

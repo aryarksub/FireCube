@@ -254,7 +254,7 @@ if __name__ == '__main__':
     layer_data = get_layer_range_data()
 
     # True if only one fire needs to be validated (fire_id); False if all stored fires need to be validated
-    single_fire = True
+    single_fire = False
 
     # To validate one fire specified here
     if single_fire:

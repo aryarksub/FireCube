@@ -30,7 +30,7 @@ roads,landfire,0,23,-9999
 asp2,landfire,0,360,-1
 elev,landfire,0,10000,null
 slpd,landfire,0,90,null
-d2m,low_res_climate,150,400,null
+d2m,low_res_climate,140,400,null
 sp,low_res_climate,50000,110000,null
-t2m,low_res_climate,150,400,null
+t2m,low_res_climate,140,400,null
 tp,low_res_climate,0,1,null
