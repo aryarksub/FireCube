@@ -219,13 +219,14 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
         verbose (bool, optional): True if descriptive messages should be printed; False otherwise. Defaults to False.
 
     Returns:
-        list: List of tuples where the first entry in each tuple corresponds to a fire event ID with invalid data and the
-        remaining entries in each tuple correspond to the lists returned by validate_one_fire_data().
+        tuple: Tuples with two lists. The first list contains tuples where the first entry corresponds to a fire event ID 
+        with invalid data and the remaining entries in each tuple correspond to the lists returned by validate_one_fire_data().
     """
     # If no layer data dictionary is specified, then obtain it with get_layer_range_data()
     layer_data_dict = layer_data_dict if layer_data_dict is not None else get_layer_range_data()
 
     invalid_fires = []
+    fires_with_missing_data = []
     processed_count = 0
 
     # Note that folders are named with the fire event ID (so folder = FID)
@@ -238,6 +239,9 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
                 if verbose:
                     print(f'Fire {folder} has invalid data')
             
+            if len(missing_layers) > 0:
+                fires_with_missing_data.append((folder, missing_layers))
+            
             processed_count += 1
 
             if verbose and processed_count % 10 == 0:
@@ -246,7 +250,7 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
     if verbose:
         print(f'Done with validation ... Validated {processed_count} fires')
     
-    return invalid_fires
+    return invalid_fires, fires_with_missing_data
 
 if __name__ == '__main__':
     fire_id = 'NV4069711993420170830'
@@ -266,7 +270,12 @@ if __name__ == '__main__':
         print(missing_layers)
         print(f'Fire {fire_id} has {"" if valid_data else "in"}valid data')
     else:
-        invalid_fires = validate_existing_fires(layer_data_dict=layer_data, verbose=True)
+        invalid_fires, fires_with_missing_data = validate_existing_fires(layer_data_dict=layer_data, verbose=True)
+        print('Fires with invalid data:')
         for fire in invalid_fires:
             print(fire)
+        print('Fires with missing data:')
+        for fire, missing_layers in fires_with_missing_data:
+            print(fire, missing_layers)
+        
 
