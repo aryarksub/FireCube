@@ -301,6 +301,10 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
         sorted_df = fires_df.sort_values(by='BurnBndAc', ascending=False)
         top_n = sorted_df.head(num_to_select)
         sample_fids = list(top_n['Event_ID'])
+    elif method == 'size_reverse':
+        sorted_df = fires_df.sort_values(by='BurnBndAc', ascending=True)
+        top_n = sorted_df.head(num_to_select)
+        sample_fids = list(top_n['Event_ID'])
     else:
         raise NotImplementedError(f'The given selection method {method} is not supported')
 
@@ -309,7 +313,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
-    temp_id = 'NV4069711993420170830'
+    temp_id = 'CO4080510828320120604 '
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
@@ -321,14 +325,19 @@ if __name__=='__main__':
     # False: Use hard-coded FID(s)
     do_sample_fids = True
 
+    # TODO: individual fire example (caldor): CA3858612053820210815
+
+    # TODO: Add filter for fires where we measure ratio of final perimeter polygon area from gpkg file
+    # and burned acres area in csv file
+
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='random')
+        fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='size_reverse')
     else:
         fids_to_use = [temp_id]
     
     # Standard procedure is to use del_sources=gen_util.data_sources to delete temporary created data files
     process_multiple_fires(
         fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
-        verbose=True, plot=plot_sources, batch_plot=True, all_plot=False, del_sources=gen_util.data_sources,
+        verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=gen_util.data_sources,
         del_intermediate=False
     )
