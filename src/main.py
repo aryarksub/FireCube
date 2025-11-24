@@ -273,7 +273,10 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 
     # If we should avoid selecting FIDs for fires whose data already exists, then mask these FIDs out
     if skip_exist:
-        fires_df = fires_df[~fires_df['Event_ID'].isin(existing_fids)]
+        fires_df = fires_df[
+            ~fires_df['Event_ID'].isin(existing_fids) &
+            ~fires_df['Event_ID'].str.contains('HI')
+        ]
 
     # Filter based on size threshold if it is provided
     if size_threshold is not None:
@@ -331,7 +334,7 @@ if __name__=='__main__':
     # and burned acres area in csv file
 
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='size_reverse')
+        fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='random')
     else:
         fids_to_use = [temp_id]
     
