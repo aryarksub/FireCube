@@ -8,7 +8,7 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 import xarray as xr
 
-from util.validation_util import GLOBAL_NULL_VALUE
+from validation_util import GLOBAL_NULL_VALUE
 
 def bufferbnds(bnds, res=0.005, bufgd=1):
     """
@@ -276,22 +276,21 @@ def get_coarsest_resolution(tifs):
             max_res = max(max_res, res_x)
     return max_res
 
-def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
+def pad_bounds_to_resolution_multiple(bounds, coarsest_res=9000):
     """
-    Centers and crops the given TIFs to the same spatial area (given by bounds).
+    Pad the given bounds to be a multiple of the given resolution (typically the coarsest resolution amongst a set
+    of TIFs). If the required padding is less than 10% of the given resolution, add an additional full resolution buffer.
 
     Args:
-        in_tifs (list): List of paths to input TIF files.
-        out_tifs (list): List of paths to output (cropped and centered) TIF files.
         bounds (list): List of bounding box coordinates in the same CRS as the input TIF. There should be
          four coordinates: x_min, y_min, x_max, y_max.
-    """
-    # Basic assertions
-    assert len(in_tifs) == len(out_tifs) and len(bounds) == 4
+        coarsest_res (float, optional): Coarsest resolution in meters. Defaults to 9000.
 
+    Returns:
+        list: Padded bounds.
+    """
     x1,y1,x2,y2 = bounds
     center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
-    coarsest_res = get_coarsest_resolution(in_tifs)
 
     # Use coarsest tif to determine number of pixels required to cover bounds
     width_m = x2 - x1   # width in meters
@@ -301,7 +300,8 @@ def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
     pad_x = coarsest_res - (width_m % coarsest_res) if width_m % coarsest_res != 0 else 0
     pad_y = coarsest_res - (height_m % coarsest_res) if height_m % coarsest_res != 0 else 0
 
-    # If the previously derived padding is smaller than 10% of the coarsest resolution, add a 100% coarsest resolution buffer in that direction.
+    # If the previously derived padding is smaller than 10% of the coarsest resolution, add a 100% coarsest 
+    # resolution buffer in that direction.
     if pad_x < coarsest_res / 10:   
         pad_x += coarsest_res
     if pad_y < coarsest_res / 10:
@@ -317,8 +317,25 @@ def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
     final_x1, final_x2 = center_x - half_width, center_x + half_width
     final_y1, final_y2 = center_y - half_height, center_y + half_height
 
+    return [final_x1, final_y1, final_x2, final_y2]
+
+def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
+    """
+    Centers and crops the given TIFs to the same spatial area (given by bounds).
+
+    Args:
+        in_tifs (list): List of paths to input TIF files.
+        out_tifs (list): List of paths to output (cropped and centered) TIF files.
+        bounds (list): List of bounding box coordinates in the same CRS as the input TIF. There should be
+         four coordinates: x_min, y_min, x_max, y_max.
+    """
+    # Basic assertions
+    assert len(in_tifs) == len(out_tifs) and len(bounds) == 4
+
+    final_bounds = pad_bounds_to_resolution_multiple(bounds, get_coarsest_resolution(in_tifs))
+
     for (in_tif, out_tif) in zip(in_tifs, out_tifs):
-        crop_tif_based_on_area(in_tif, out_tif, (final_x1, final_y1, final_x2, final_y2))
+        crop_tif_based_on_area(in_tif, out_tif, final_bounds)
 
 def pad_tif_to_bounds(in_tif, out_tif, bounds):
     """

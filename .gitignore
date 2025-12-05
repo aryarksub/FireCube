@@ -2,6 +2,7 @@
 temp/
 notes.txt
 src/temp*
+src/*/temp*
 
 # Make output data/visualization private (for now)
 output/

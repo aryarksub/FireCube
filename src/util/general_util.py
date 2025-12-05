@@ -29,6 +29,7 @@ subdir_type_resample = 'resample'
 dir_output = 'output'
 dir_sum_vis = 'sum_vis' # summary visualizations
 dir_cubes = 'cubes' # top-level dir for cube outputs
+dir_crop_cubes = 'cropped_cubes' # cropped cube outputs
 subdir_vis = 'vis' # visualizations
 subdir_lrc = 'low_res_climate' # era5 9000m
 subdir_hrc = 'high_res_climate' # pyregence 600m
@@ -74,6 +75,22 @@ def create_dirs_for_fire(fid):
         batch_path = os.path.join(dir_output, dir_cubes, fid, batch)
         if not os.path.exists(batch_path):
             os.makedirs(batch_path)
+
+def get_all_output_fids():
+    """
+    Get a list of all fire event IDs that have output data.
+
+    Returns:
+        list: List of fire event IDs with output data.
+    """
+    output_fids = []
+    cubes_path = os.path.join(dir_output, dir_cubes)
+    if os.path.exists(cubes_path):
+        for fid in os.listdir(cubes_path):
+            fid_path = os.path.join(cubes_path, fid)
+            if os.path.isdir(fid_path):
+                output_fids.append(fid)
+    return output_fids
 
 def get_era5_nc_filename(fid):
     """
