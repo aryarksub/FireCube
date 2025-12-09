@@ -21,7 +21,7 @@ subdir_era5 = 'era5'
 subdir_pyr = 'pyr'
 subdir_lf = 'lf'
 subdir_feds = 'feds'
-subdir_frp = 'frp'
+# subdir_frp = 'frp'
 subdir_type_original = 'original'
 subdir_type_converted = 'converted'
 subdir_type_resample = 'resample'
@@ -38,10 +38,10 @@ subdir_landfire = 'landfire' # landfire 30m
 subdir_firespread = 'fire_spread' # FEDS rasters 300m
 
 dir_types = [dir_data, dir_videos]
-data_sources = [subdir_era5, subdir_pyr, subdir_lf, subdir_feds, subdir_frp]
+data_sources = [subdir_era5, subdir_pyr, subdir_lf, subdir_feds]#, subdir_frp]
 var_types = [subdir_type_original, subdir_type_converted, subdir_type_resample]
 
-data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_topo, subdir_landfire, subdir_firespread, subdir_frp]
+data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_topo, subdir_landfire, subdir_firespread]#, subdir_frp]
 
 def create_dirs_for_fire(fid):
     """
@@ -130,7 +130,7 @@ def get_lf_zip_filename(fid):
 
 def get_temp_data_video_filename(fid, var, dir_type='data', data_source='era5', var_type='original'):
     """
-    Get name of the desiredtemporary  data/video file for the given fire based on the variable, data type, data source, 
+    Get name of the desired temporary data/video file for the given fire based on the variable, data type, data source, 
     and variable type.
 
     Args:
@@ -177,12 +177,12 @@ def get_out_batch_for_tif(tif):
     # LANDFIRE variables have their own batch ("landfire")
     elif subdir_lf in tif:
         return subdir_landfire
-    # FEDS variables have their own batch ("fire spread")
+    # FEDS/FRP variables have their own batch ("fire spread")
     elif subdir_feds in tif:
         return subdir_firespread
     # FRP variables have their own batch ("frp")
-    elif subdir_frp in tif:
-        return subdir_frp
+    # elif subdir_frp in tif:
+    #     return subdir_frp
     # All other variables are not supported
     else:
         print(f'Resolution + Var combination for file {tif} is not supported')

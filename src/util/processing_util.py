@@ -8,7 +8,7 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 import xarray as xr
 
-from validation_util import GLOBAL_NULL_VALUE
+from util.validation_util import GLOBAL_NULL_VALUE
 
 def bufferbnds(bnds, res=0.005, bufgd=1):
     """

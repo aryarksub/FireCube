@@ -419,7 +419,7 @@ def driver_frp(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num
 
     # Get the name for the temporary FRP data file
     var_tif = gen_util.get_temp_data_video_filename(
-        fid, var, dir_type=gen_util.dir_data, data_source=gen_util.subdir_frp, var_type=gen_util.subdir_type_resample
+        fid, var, dir_type=gen_util.dir_data, data_source=gen_util.subdir_feds, var_type=gen_util.subdir_type_resample
     )
 
     # Save rasterized data to the temporary TIF file
@@ -436,7 +436,7 @@ def driver_frp(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num
     # Plot FRP data if needed
     if plot_orig:
         var_vid = gen_util.get_temp_data_video_filename(
-            fid, var, dir_type=gen_util.dir_videos, data_source=gen_util.subdir_frp, var_type=gen_util.subdir_type_resample
+            fid, var, dir_type=gen_util.dir_videos, data_source=gen_util.subdir_feds, var_type=gen_util.subdir_type_resample
         )
         gen_util.create_animation_plot_from_tif(
             var_tif, var_vid, start_time=fire_start

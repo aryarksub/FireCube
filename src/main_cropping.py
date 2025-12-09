@@ -12,8 +12,8 @@ mpl.rcParams['animation.ffmpeg_path'] = ffmpeg_path
 
 plt.switch_backend('agg')
 
-from processing_util import pad_bounds_to_resolution_multiple
-import general_util as gen_util
+from util.processing_util import pad_bounds_to_resolution_multiple
+import util.general_util as gen_util
 
 def determine_band_range(fperim_tif):
     """

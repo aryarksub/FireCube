@@ -127,7 +127,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         )
         feds_util.driver_frp(
             fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, 
-            plot_orig=True if gen_util.subdir_frp in plot else False
+            plot_orig=True if gen_util.subdir_feds in plot else False
         )
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
@@ -316,7 +316,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
-    temp_id = 'CA3502012029920170706'
+    temp_id = 'UT3823111150520120605'
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
@@ -327,11 +327,6 @@ if __name__=='__main__':
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
     do_sample_fids = True
-
-    # TODO: individual fire example (caldor): CA3858612053820210815
-
-    # TODO: Add filter for fires where we measure ratio of final perimeter polygon area from gpkg file
-    # and burned acres area in csv file
 
     if do_sample_fids:
         fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='random')
