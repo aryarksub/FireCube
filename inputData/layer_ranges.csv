@@ -2,7 +2,7 @@ layer,category,min,max,nan
 fperim,fire_spread,0,1,null
 fline,fire_spread,0,1,null
 nfp,fire_spread,0,1,null
-frp,frp,0,5000,null
+frp,fire_spread,0,5000,null
 adj,fuel_topo,0,1,-9999
 asp,fuel_topo,0,360,-1
 cbd,fuel_topo,0,45,-9999
