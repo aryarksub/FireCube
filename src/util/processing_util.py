@@ -363,15 +363,23 @@ def pad_tif_to_bounds(in_tif, out_tif, bounds):
         new_width = int(np.ceil((bounds.right - bounds.left) / xres))
         new_height = int(np.ceil((bounds.top - bounds.bottom) / yres))
 
+        # Compute pixel offsets to place original data
+        col_offset = int((original_bounds.left - bounds.left) / xres)
+        row_offset = int((bounds.top - original_bounds.top) / yres)
+
+        # Width/Height needed to fit original data within padded area
+        required_width = col_offset + src.width
+        required_height = row_offset + src.height
+
+        # Increase padded area if needed
+        new_width = max(new_width, required_width)
+        new_height = max(new_height, required_height)
+
         # Compute new transform for the new bounding box
         new_transform = from_origin(bounds.left, bounds.top, xres, yres)
 
         # Create empty array filled with zeros
         padded_data = np.zeros((count, new_height, new_width), dtype=dtype)
-
-        # Compute pixel offsets to place original data
-        col_offset = int((original_bounds.left - bounds.left) / xres)
-        row_offset = int((bounds.top - original_bounds.top) / yres)
 
         # Copy original data into the padded array
         padded_data[:, row_offset:row_offset + src.height, col_offset:col_offset + src.width] = original_data

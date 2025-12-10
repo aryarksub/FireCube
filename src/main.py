@@ -269,7 +269,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
     """
     existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
 
-    fires_df = fires_df[~fires_df['Event_ID'].str.contains('HI')]
+    fires_df = firelist[~firelist['Event_ID'].str.contains('HI')]
 
     # If we should avoid selecting FIDs for fires whose data already exists, then mask these FIDs out
     if skip_exist:
@@ -313,7 +313,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
-    temp_id = 'UT3823111150520120605'
+    temp_id = 'CA3425911746120160816'
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
