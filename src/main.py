@@ -269,14 +269,11 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
     """
     existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
 
-    fires_df = firelist.copy(deep=True)
+    fires_df = fires_df[~fires_df['Event_ID'].str.contains('HI')]
 
     # If we should avoid selecting FIDs for fires whose data already exists, then mask these FIDs out
     if skip_exist:
-        fires_df = fires_df[
-            ~fires_df['Event_ID'].isin(existing_fids) &
-            ~fires_df['Event_ID'].str.contains('HI')
-        ]
+        fires_df = fires_df[~fires_df['Event_ID'].isin(existing_fids)]
 
     # Filter based on size threshold if it is provided
     if size_threshold is not None:
