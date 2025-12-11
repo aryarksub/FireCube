@@ -360,16 +360,20 @@ def pad_tif_to_bounds(in_tif, out_tif, bounds):
         bounds = BoundingBox(left=xmin, bottom=ymin, right=xmax, top=ymax)
 
         # Compute new width and height in pixels
-        new_width = int(np.ceil((bounds.right - bounds.left) / xres))
-        new_height = int(np.ceil((bounds.top - bounds.bottom) / yres))
+        new_width = int(np.ceil(abs(bounds.right - bounds.left) / xres))
+        new_height = int(np.ceil(abs(bounds.top - bounds.bottom) / yres))
 
         # Compute pixel offsets to place original data
-        col_offset = int((original_bounds.left - bounds.left) / xres)
-        row_offset = int((bounds.top - original_bounds.top) / yres)
+        col_offset = max(0, int((original_bounds.left - bounds.left) / xres))
+        row_offset = max(0, int((bounds.top - original_bounds.top) / yres))
 
         # Width/Height needed to fit original data within padded area
         required_width = col_offset + src.width
         required_height = row_offset + src.height
+
+        # Uncomment for debugging
+        # print(in_tif, out_tif, src.height, src.width, new_height, new_width, required_height, required_width, row_offset, col_offset)
+        # print(bounds.left <= original_bounds.left, bounds.right >= original_bounds.right, bounds.top >= original_bounds.top, bounds.bottom <= original_bounds.bottom)
 
         # Increase padded area if needed
         new_width = max(new_width, required_width)
