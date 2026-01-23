@@ -253,7 +253,7 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
     return invalid_fires, fires_with_missing_data
 
 if __name__ == '__main__':
-    fire_id = 'CA3884412276020150912'
+    fire_id = 'NM3694910364420240822'
 
     layer_data = get_layer_range_data()
 
