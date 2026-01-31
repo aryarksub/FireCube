@@ -64,7 +64,10 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     fire_row = firelist[firelist['Event_ID'] == fid]
     center_lat = round((fire_row['lat0'].values[0] + fire_row['lat1'].values[0]) / 2, 2)
     center_lon = round((fire_row['lon0'].values[0] + fire_row['lon1'].values[0]) / 2, 2)
-    
+   
+    #Convert from LST to UTC (inverting FEDS method for computing local time)
+    df_t_with_buffer = df_t_with_buffer - pd.to_timedelta(round(center_lon / 15), unit="hours")
+
     fire_start = pd.Timestamp(df_t_with_buffer.min())
     # Add 11 to go from mid-day to end of last day (hour 23:00 is the last time)
     fire_hours = int( (df_t_with_buffer.max() - df_t_with_buffer.min()).total_seconds() / 3600) + 11
