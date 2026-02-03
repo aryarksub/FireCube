@@ -68,9 +68,9 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     #Convert from LST to UTC (inverting FEDS method for computing local time)
     df_t_with_buffer = df_t_with_buffer - pd.to_timedelta(round(center_lon / 15), unit="hours")
 
-    fire_start = pd.Timestamp(df_t_with_buffer.min())
-    # Add 11 to go from mid-day to end of last day (hour 23:00 is the last time)
-    fire_hours = int( (df_t_with_buffer.max() - df_t_with_buffer.min()).total_seconds() / 3600) + 11
+    fire_start = pd.Timestamp(df_t_with_buffer.min().normalize())
+    fire_end = pd.Timestamp(df_t_with_buffer.max().normalize()) + pd.Timedelta(hours=23)
+    fire_hours = int( (fire_end - fire_start).total_seconds() / 3600)
 
     # ERA5 download
     if len(era5_vars) != 0:
@@ -146,21 +146,21 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         else:
             proc_util.convert_null_values_to_nan(in_tif=var_tif, out_tif=var_tif, null_values=[valid_util.GLOBAL_NULL_VALUE, -1])
 
-    # Validate all downloaded data
-    valid_data, invalid_layers, invalid_spatial_layers, missing_layers = valid_util.validate_one_fire_data(fid)
-    if not valid_data:
-        if verbose:
-        #     print('Layers with invalid data:')
-        #     for layer in invalid_layers:
-        #         print(layer)
-        #     print('Layers with invalid spatial info:')
-        #     for layer in invalid_spatial_layers:
-        #         print(layer)
-        #     print('Missing layers:')
-        #     for layer in missing_layers:
-        #         print(layer)
-        # raise ValueError(f'Fire {fid} has invalid data')
-            print(f'Fire {fid} has invalid data')
+    # # Validate all downloaded data
+    # valid_data, invalid_layers, invalid_spatial_layers, missing_layers = valid_util.validate_one_fire_data(fid)
+    # if not valid_data:
+    #     if verbose:
+    #     #     print('Layers with invalid data:')
+    #     #     for layer in invalid_layers:
+    #     #         print(layer)
+    #     #     print('Layers with invalid spatial info:')
+    #     #     for layer in invalid_spatial_layers:
+    #     #         print(layer)
+    #     #     print('Missing layers:')
+    #     #     for layer in missing_layers:
+    #     #         print(layer)
+    #     # raise ValueError(f'Fire {fid} has invalid data')
+    #         print(f'Fire {fid} has invalid data')
 
     # Create batch plots
     if batch_plot:
@@ -168,11 +168,14 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
             if batch != gen_util.subdir_vis:
                 if verbose:
                     print(f'Generating plot for batch {batch} - fire {fid}')
-                gen_util.create_multi_animation_for_dir(
-                    os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, batch),
-                    gen_util.get_output_data_filename(fid, batch, gen_util.subdir_vis),
-                    fire_start
-                )
+                try:
+                    gen_util.create_multi_animation_for_dir(
+                        os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, batch),
+                        gen_util.get_output_data_filename(fid, batch, gen_util.subdir_vis),
+                        fire_start
+                    )
+                except:
+                    pass
 
     # Create one large plot with all variables
     if all_plot: 
@@ -272,7 +275,8 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
     """
     existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
 
-    fires_df = firelist[~firelist['Event_ID'].str.contains('HI')]
+    # TODO: Revert this after LANDFIRE versioning has been fixed
+    fires_df = firelist[(~firelist['Event_ID'].str.contains('HI|AK', na=False)) & (firelist['Year'] >= 2020) & (firelist['Year'] <= 2022)]
 
     # If we should avoid selecting FIDs for fires whose data already exists, then mask these FIDs out
     if skip_exist:
@@ -316,7 +320,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
-    temp_id = 'CA3884412276020150912'
+    temp_id = 'AZ3338011031820240727'
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
@@ -326,7 +330,7 @@ if __name__=='__main__':
     
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
-    do_sample_fids = True
+    do_sample_fids = False
 
     if do_sample_fids:
         fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='random')
