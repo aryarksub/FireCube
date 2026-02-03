@@ -77,6 +77,26 @@ def get_tif_spatial_properties(src):
 
     return *top_left, spatial_width, spatial_height
 
+def check_band_count(layer_tif1, layer_tif2):
+    """
+    Determine whether the band count of layer_tif2 is either 1 or equal to the band count of layer_tif1.
+
+    Args:
+        layer_tif1 (str): Path to the first TIF file.
+        layer_tif2 (str): Path to the second TIF file.
+
+    Returns:
+        tuple: Tuple of (is_valid, tif1_band_count, tif2_band_count) where is_valid is a boolean indicating whether
+         the band counts are valid (i.e. either 1 or equal).
+    """
+    with rasterio.open(layer_tif1) as src_tif1:
+        tif1_band_count = src_tif1.count
+
+        with rasterio.open(layer_tif2) as src_tif2:
+            tif2_band_count = src_tif2.count
+
+            return tif2_band_count in {1, tif1_band_count}, tif1_band_count, tif2_band_count
+
 def validate_one_fire_data(fid, layer_data_dict=None):
     """
     Determine whether the downloaded data for the given fire (fid) is valid. Validation is done by checking that the data
@@ -115,6 +135,9 @@ def validate_one_fire_data(fid, layer_data_dict=None):
     expected_spatial_properties = None
     invalid_layers_spatial = []
     missing_layers = []
+    invalid_layers_band_count = []
+
+    fperim_tif = os.path.join(fire_folder, 'fire_spread', 'fperim.tif')
     
     for layer, layer_data in layer_data_dict.items():
         # Since there are multiple potential EVT layers (LANDFIRE), if we have already found data for one, skip the others
@@ -167,6 +190,10 @@ def validate_one_fire_data(fid, layer_data_dict=None):
         
         if 'evt' in layer:
             evt_found = True
+
+        is_valid, fperim_band_count, layer_band_count = check_band_count(fperim_tif, layer_tif)
+        if not is_valid:
+            invalid_layers_band_count.append((layer, fperim_band_count, layer_band_count))
         
         # Data validation for each band in TIF
         with rasterio.open(layer_tif) as src:
@@ -205,7 +232,13 @@ def validate_one_fire_data(fid, layer_data_dict=None):
                     invalid_layers.append((layer, band+1, invalid_locations))
                     break
         
-    return len(invalid_layers) == 0 and len(invalid_layers_spatial) == 0, invalid_layers, invalid_layers_spatial, missing_layers
+    return (
+        len(invalid_layers) == 0 and len(invalid_layers_spatial) == 0 and len(invalid_layers_band_count) == 0, 
+        invalid_layers,
+        invalid_layers_spatial, 
+        missing_layers, 
+        invalid_layers_band_count
+    )
 
 
 def validate_existing_fires(layer_data_dict=None, verbose=False):
@@ -227,20 +260,23 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
 
     invalid_fires = []
     fires_with_missing_data = []
+    invalid_fires_band_count = []
     processed_count = 0
 
     # Note that folders are named with the fire event ID (so folder = FID)
     for folder in os.listdir(output_cubes_dir):
         if os.path.isdir(os.path.join(output_cubes_dir, folder)):
-            valid_data, invalid_layers, invalid_layers_spatial, missing_layers = validate_one_fire_data(folder, layer_data_dict)
+            valid_data, invalid_layers, invalid_layers_spatial, missing_layers, invalid_layers_band_count = validate_one_fire_data(folder, layer_data_dict)
             if not valid_data:
-                invalid_fires.append((folder, invalid_layers, invalid_layers_spatial, missing_layers))
+                invalid_fires.append((folder, invalid_layers, invalid_layers_spatial, missing_layers, invalid_layers_band_count))
 
                 if verbose:
                     print(f'Fire {folder} has invalid data')
             
             if len(missing_layers) > 0:
                 fires_with_missing_data.append((folder, missing_layers))
+            if len(invalid_layers_band_count) > 0:
+                invalid_fires_band_count.append((folder, invalid_layers_band_count))
             
             processed_count += 1
 
@@ -253,7 +289,7 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
     return invalid_fires, fires_with_missing_data
 
 if __name__ == '__main__':
-    fire_id = 'NM3694910364420240822'
+    fire_id = 'ID4308111519720240903'
 
     layer_data = get_layer_range_data()
 
@@ -262,20 +298,24 @@ if __name__ == '__main__':
 
     # To validate one fire specified here
     if single_fire:
-        valid_data, invalid_layers, invalid_layers_spatial, missing_layers = validate_one_fire_data(fire_id, layer_data)
+        valid_data, invalid_layers, invalid_layers_spatial, missing_layers, invalid_layers_band_count = validate_one_fire_data(fire_id, layer_data)
         for layer in invalid_layers:
-            print(layer)
+            print('Invalid layer (data):', layer)
         for layer in invalid_layers_spatial:
-            print(layer)
+            print('Invalid layer (spatial):', layer)
+        for layer in invalid_layers_band_count:
+            print('Invalid layer (band count):', layer)
         print(missing_layers)
         print(f'Fire {fire_id} has {"" if valid_data else "in"}valid data')
     else:
-        invalid_fires, fires_with_missing_data = validate_existing_fires(layer_data_dict=layer_data, verbose=True)
+        invalid_fires, fires_with_missing_data, invalid_fires_band_count = validate_existing_fires(layer_data_dict=layer_data, verbose=True)
         print('Fires with invalid data:')
         for fire in invalid_fires:
             print(fire)
         print('Fires with missing data:')
         for fire, missing_layers in fires_with_missing_data:
             print(fire, missing_layers)
+        print('Fires with invalid band count:')
+        for fire, invalid_layers_band_count in invalid_fires_band_count:
+            print(fire, invalid_layers_band_count)
         
-

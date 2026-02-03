@@ -93,7 +93,9 @@ def download_ERA5_reg(fid, df_t, bnds, varERA5=['2m_temperature'], fnmERA5='./ER
     # Merge all GRIB files into one dataset
     ds = xr.open_mfdataset(temp_file_prefix + '*.grib', engine='cfgrib')
     # Clean the dataset: Only keep times within the desired period and remove data for duplicated times
-    ds_clean = proc_util.clean_xr_dataset_by_times(ds, df_t.min(), df_t.max(), replace_nan=True)
+    start_of_first_day = df_t.min().normalize()
+    end_of_last_day = df_t.max().normalize() + pd.Timedelta(hours=23)
+    ds_clean = proc_util.clean_xr_dataset_by_times(ds, start_of_first_day, end_of_last_day, replace_nan=True)
     # Convert dataset to NetCDF
     ds_clean.to_netcdf(fnmERA5)
 
@@ -174,7 +176,7 @@ def driver_era5(fid, vars, df_t, bounds, out_nc_file, plot_types=[]):
     """
 
     # Download ERA5 data
-    download_ERA5_reg(fid, df_t, bounds, vars, out_nc_file)
+    download_ERA5_reg(fid, df_t, bounds, vars, out_nc_file, redo=True)
     ds = xr.open_dataset(gen_util.get_era5_nc_filename(fid), engine='netcdf4')
     data_vars = get_data_vars_from_era5_dataset(ds)
     # Convert data for TIF files
