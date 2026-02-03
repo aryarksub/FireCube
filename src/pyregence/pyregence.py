@@ -5,9 +5,14 @@ import pyregence.fuel_wx_ign_pb2_grpc as fuel_wx_ign_pb2_grpc
 import rasterio
 import requests
 import tarfile
+import time
 
 import util.general_util as gen_util
 import util.processing_util as proc_util
+
+VARS_TO_IGNORE = {
+    'asp', 'fbfm40', 'slp', 'ignition_mask', 'phi', 'dem'
+}
   
 def get_cloudfire_channel():
     """
@@ -170,13 +175,25 @@ def driver_pyregence(fid, fire_center, fire_start, fire_hours, plot_types=[]):
     out_dir = os.path.dirname(full_out_path)
     
     # Use 90 km buffer
-    download_pyregence_data(out_dir, out_filename, fire_center, (90,90,90,90), fire_start, fire_hours, redo=False)
+    start_time = time.time()
+    print('Downloading Pyregence data...')
+    download_pyregence_data(out_dir, out_filename, fire_center, (90,90,90,90), fire_start, fire_hours, redo=True)
+    t = time.time()
+    print('Time:', t - start_time)
+    print('Extracting Pyregence TIF files...')
     extract_tif_from_pyr_tar(fid, full_out_path)
     data_vars = gen_util.get_tif_vars_in_dir(
         os.path.join(gen_util.dir_temp, gen_util.dir_data, fid, gen_util.subdir_pyr, gen_util.subdir_type_original)
     )
+    print(data_vars)
     
+    t2 = time.time()
+    print('Time:', t2 - t)
+    print('Processing Pyregence TIF files...')
     for var in data_vars:
+        if var in VARS_TO_IGNORE:
+            continue
+        print('Processing variable:', var)
         # Get data/plot file names
         pyr_var_fnames = [
             gen_util.get_temp_data_video_filename(
@@ -214,3 +231,7 @@ def driver_pyregence(fid, fire_center, fire_start, fire_hours, plot_types=[]):
                     mask=True,
                     ignore_small_neg=True
                 )
+
+    t3 = time.time()
+    print('Time:', t3 - t2)
+    print('Finished processing Pyregence data.')
