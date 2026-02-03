@@ -176,52 +176,42 @@ def resample_tif(in_tif, out_tif, target_res=None, catype=False):
     Raises:
         ValueError: Occurs if the input TIF file has a non-projected CRS
     """
-    resample_method = Resampling.nearest if catype else Resampling.bilinear
+    resampling = Resampling.nearest if catype else Resampling.bilinear
 
     with rasterio.open(in_tif) as src:
-        transform = src.transform
-        crs = src.crs
-        width = src.width
-        height = src.height
+        if not src.crs or not src.crs.is_projected:
+            raise ValueError("CRS must be projected")
 
-        # Current pixel size
-        pixel_width = transform.a
-        pixel_height = -transform.e
+        # Original resolution
+        xres = src.transform.a
 
-        # Ensure CRS is in meters
-        if not crs.is_projected:
-            raise ValueError("CRS must be projected (e.g., UTM) to use meters.")
-        
-        # If no target resolution is provided, use the closest multiple of 30 to the original resolution
+        # Default target resolution
         if target_res is None:
-            target_res = round(pixel_width / 30) * 30
+            target_res = round(xres / 30) * 30
 
-        # Compute new width/height to avoid padding (crop if needed)
-        new_width = int((width * pixel_width) // target_res)
-        new_height = int((height * pixel_height) // target_res)
-
-        # New transform - same origin, new resolution
-        new_transform = Affine(
-            target_res, 0, transform.c,
-            0, -target_res, transform.f
+        # Compute new transform and dimensions
+        transform, width, height = calculate_default_transform(
+            src.crs,
+            src.crs,
+            src.width,
+            src.height,
+            *src.bounds,
+            resolution=target_res
         )
 
-        # Write to new file
-        profile = src.profile
-        profile.update({
-            "height": new_height,
-            "width": new_width,
-            "transform": new_transform
-        })
+        profile = src.profile.copy()
+        profile.update(
+            transform=transform,
+            width=width,
+            height=height
+        )
 
         with rasterio.open(out_tif, "w", **profile) as dst:
-            for i in range(1, src.count+1):
-                band_data = src.read(
-                    i,
-                    out_shape=(new_height, new_width),
-                    resampling=resample_method
-                )
-                dst.write(band_data, i)
+            data = src.read(
+                out_shape=(src.count, height, width),
+                resampling=resampling
+            )
+            dst.write(data)
 
 def crop_tif_based_on_area(in_tif, out_tif, bounds):
     """
