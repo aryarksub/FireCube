@@ -141,13 +141,13 @@ def get_lf_layers_given_vars_and_year(var_names, year, state):
         list: List of LANDFIRE layer names (one for each given variable).
     """
 
-    # Yearly cutpoints (one for each time LANDFIRE released a new version)
-    year_cutpoints = [2014,2020,2022,2023,2024]
+    # Yearly cutpoints (one for each time LANDFIRE released a new version, based on most recent LANDFIRE reconfiguration)
+    year_cutpoints = [2016,2022,2023]
     # Map of variables EVT/FBFM13/FBFM40 to layer names based on each yearly cutpoint
     version_lists = {
-        'EVT': [str(num) + 'EVT' for num in [105,200,220,230,240]],
-        'FBFM13': ['105FBFM13', '200F13_20', '220F13_22', '230FBFM13', '240FBFM13'],
-        'FBFM40': ['105FBFM40', '200F40_20', '220F40_22', '230FBFM40', '240FBFM40'],
+        'EVT': [str(num) + 'EVT' for num in [200,230,240]],
+        'FBFM13': ['200F13_20', '230FBFM13', '240FBFM13'],
+        'FBFM40': ['200F40_20', '230FBFM40', '240FBFM40'],
     }
     latest_versions = {
         'EVT': '250EVT',
