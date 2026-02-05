@@ -176,7 +176,7 @@ def driver_era5(fid, vars, df_t, bounds, out_nc_file, plot_types=[]):
     """
 
     # Download ERA5 data
-    download_ERA5_reg(fid, df_t, bounds, vars, out_nc_file, redo=True)
+    download_ERA5_reg(fid, df_t, bounds, vars, out_nc_file, redo=False)
     ds = xr.open_dataset(gen_util.get_era5_nc_filename(fid), engine='netcdf4')
     data_vars = get_data_vars_from_era5_dataset(ds)
     # Convert data for TIF files

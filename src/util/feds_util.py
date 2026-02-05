@@ -124,7 +124,7 @@ def read_1fire(Event_ID):
     gdf_nfp_rd = read_gdf_fire(Event_ID, layer='newfirepix')
     return gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd
 
-def rasterize_gdf_and_save_as_tif(gdf, out_tif, resolution, crs='EPSG:5070', start_time=None, end_time=None, num_hours=None):
+def rasterize_gdf_and_save_as_tif(gdf, out_tif, resolution, crs='EPSG:5070', start_time=None, end_time=None, num_hours=None, use_prev=False):
     """
     Rasterize the given GeoDataFrame with FEDS data and save it as a TIF file at the specified output location. This process 
     may include projection to a new CRS (coordinate reference system) and/or resolution.
@@ -138,6 +138,7 @@ def rasterize_gdf_and_save_as_tif(gdf, out_tif, resolution, crs='EPSG:5070', sta
         start_time (pandas.Timestamp, optional): Start time from which data should be rasterized. Defaults to None.
         end_time (pandas.Timestamp, optional): End time until which data should be rasterized. Defaults to None.
         num_hours (int, optional): Number of hours for which data should be rasterized. Defaults to None.
+        use_prev (bool, optional): Whether to use previous non-null data for rasterization if no data exists. Defaults to False.
     """
     # Convert gdf (GeoDataFrame) to correct CRS and get width, height based on desired resolution
     gdf = gdf.to_crs(crs)
@@ -157,16 +158,19 @@ def rasterize_gdf_and_save_as_tif(gdf, out_tif, resolution, crs='EPSG:5070', sta
     prev_non_null_df_time = None
     rasterized_bands = []
 
-    # For each time, if there is FEDS data, use it for rasterization; otherwise, use previously used data (if it exists)
+    # For each time, if there is FEDS data, use it for rasterization; otherwise, use previously used data (if use_prev is True)
     # This is needed because the time step in the time range is 1-hour, but FEDS data is recorded every 12 hours
     for t in time_range:
         if t in gdf_times:
             df = gdf[gdf['t'] == t].dropna(subset=['geometry'])
             prev_non_null_df_time = t
-        elif prev_non_null_df_time is not None:
+        elif use_prev and prev_non_null_df_time is not None:
             df = gdf[gdf['t'] == prev_non_null_df_time].dropna(subset=['geometry'])
         else:
-            df = None
+            if use_prev:
+                df = None
+            else:
+                continue
 
         # Rasterize the selected geometries; if no data, create an empty raster
         if df is not None and not df.empty:
@@ -205,7 +209,7 @@ def rasterize_gdf_and_save_as_tif(gdf, out_tif, resolution, crs='EPSG:5070', sta
     proc_util.resample_tif(temp_tif_file, out_tif, target_res=resolution)
     os.remove(temp_tif_file)
             
-def driver_feds(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num_hours=None, plot_orig=False):
+def driver_feds(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num_hours=None, plot_orig=False, use_prev=False):
     """
     Driver function for obtaining, cropping, resampling, and plotting FEDS data.
 
@@ -219,6 +223,7 @@ def driver_feds(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, nu
         fire_end (pandas.Timestamp, optional): End time until which data should be rasterized. Defaults to None.
         num_hours (int, optional): Number of hours for which data should be rasterized. Defaults to None.
         plot_orig (bool, optional): True if FEDS data should be plotted; False otherwise. Defaults to False.
+        use_prev (bool, optional): Whether to use previous non-null data for rasterization if no data exists. Defaults to False.
 
     Raises:
         ValueError: Occurs when fire perimeter or new fire pixel data is empty.
@@ -250,7 +255,7 @@ def driver_feds(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, nu
 
         # Save rasterized data to the temporary TIF file
         rasterize_gdf_and_save_as_tif(
-            gdfs[var], out_tif=var_tif, resolution=res, start_time=fire_start, end_time=fire_end, num_hours=num_hours
+            gdfs[var], out_tif=var_tif, resolution=res, start_time=fire_start, end_time=fire_end, num_hours=num_hours, use_prev=use_prev
         )
 
         out_batch = gen_util.get_out_batch_for_tif(var_tif)
@@ -311,7 +316,7 @@ def get_gdf_firepix_t(df_fp, t, out_crs="epsg:4326"):
 
     return gdf_fp_t
 
-def rasterize_frp_and_save_as_tif(gdf_fperim_rd, df_fp, out_tif, resolution, crs='EPSG:5070', start_time=None, end_time=None, num_hours=None):
+def rasterize_frp_and_save_as_tif(gdf_fperim_rd, df_fp, out_tif, resolution, crs='EPSG:5070', start_time=None, end_time=None, num_hours=None, use_prev=False):
     """
     Rasterize the given GeoDataFrame with FRP data and save it as a TIF file at the specified output location. This process 
     may include projection to a new CRS (coordinate reference system) and/or resolution.
@@ -326,6 +331,7 @@ def rasterize_frp_and_save_as_tif(gdf_fperim_rd, df_fp, out_tif, resolution, crs
         start_time (pandas.Timestamp, optional): Start time from which data should be rasterized. Defaults to None.
         end_time (pandas.Timestamp, optional): End time until which data should be rasterized. Defaults to None.
         num_hours (int, optional): Number of hours for which data should be rasterized. Defaults to None.
+        use_prev (bool, optional): Whether to use previous non-null data for rasterization if no data exists. Defaults to False.
     """
     # Convert gdf_fperim_rd (GeoDataFrame) to correct CRS and get width, height based on desired resolution
     gdf_fperim_rd = gdf_fperim_rd.to_crs(crs)
@@ -345,16 +351,19 @@ def rasterize_frp_and_save_as_tif(gdf_fperim_rd, df_fp, out_tif, resolution, crs
     prev_non_null_df_time = None
     rasterized_bands = []
 
-    # For each time, if there is FEDS/FRP data, use it for rasterization; otherwise, use previously used data (if it exists)
+    # For each time, if there is FEDS/FRP data, use it for rasterization; otherwise, use previously used data (if use_prev is True)
     # This is needed because the time step in the time range is 1-hour, but FEDS/FRP data is recorded every 12 hours
     for t in time_range:
         if t in gdf_times:
             gdf_fp_t = get_gdf_firepix_t(df_fp, t, out_crs=crs)
             prev_non_null_df_time = t
-        elif prev_non_null_df_time is not None:
+        elif use_prev and prev_non_null_df_time is not None:
             gdf_fp_t = get_gdf_firepix_t(df_fp, prev_non_null_df_time, out_crs=crs)
         else:
-            gdf_fp_t = None
+            if use_prev:
+                gdf_fp_t = None
+            else:
+                continue
 
         # Rasterize the selected geometries; if no data, create an empty raster
         if gdf_fp_t is not None and not gdf_fp_t.empty:
@@ -393,7 +402,7 @@ def rasterize_frp_and_save_as_tif(gdf_fperim_rd, df_fp, out_tif, resolution, crs
     proc_util.resample_tif(temp_tif_file, out_tif, target_res=resolution)
     os.remove(temp_tif_file)
 
-def driver_frp(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num_hours=None, plot_orig=False):
+def driver_frp(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num_hours=None, plot_orig=False, use_prev=False):
     """
     Driver function for obtaining, cropping, resampling, and plotting FRP data.
 
@@ -407,6 +416,7 @@ def driver_frp(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num
         fire_end (pandas.Timestamp, optional): End time until which data should be rasterized. Defaults to None.
         num_hours (int, optional): Number of hours for which data should be rasterized. Defaults to None.
         plot_orig (bool, optional): True if FRP data should be plotted; False otherwise. Defaults to False.
+        use_prev (bool, optional): Whether to use previous non-null data for rasterization if no data exists. Defaults to False.
     """
     # Read FEDS2.5 MTBS fire perimeter data for the given fire
     gdf_fperim_rd, _, _ = read_1fire(fid) 
@@ -424,7 +434,7 @@ def driver_frp(fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num
 
     # Save rasterized data to the temporary TIF file
     rasterize_frp_and_save_as_tif(
-        gdf_fperim_rd, df_fp, out_tif=var_tif, resolution=res, start_time=fire_start, end_time=fire_end, num_hours=num_hours
+        gdf_fperim_rd, df_fp, out_tif=var_tif, resolution=res, start_time=fire_start, end_time=fire_end, num_hours=num_hours, use_prev=use_prev
     )
 
     out_batch = gen_util.get_out_batch_for_tif(var_tif)

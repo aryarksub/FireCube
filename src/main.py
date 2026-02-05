@@ -126,11 +126,13 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         if verbose: print(f'Getting/Rasterizing FEDS data for fire {fid}')
         feds_util.driver_feds(
             fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, 
-            plot_orig=True if gen_util.subdir_feds in plot else False
+            plot_orig=True if gen_util.subdir_feds in plot else False,
+            use_prev=False
         )
         feds_util.driver_frp(
             fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, 
-            plot_orig=True if gen_util.subdir_feds in plot else False
+            plot_orig=True if gen_util.subdir_feds in plot else False,
+            use_prev=False
         )
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
@@ -275,8 +277,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
     """
     existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
 
-    # TODO: Revert this after LANDFIRE versioning has been fixed
-    fires_df = firelist[(~firelist['Event_ID'].str.contains('HI|AK', na=False)) & (firelist['Year'] >= 2020) & (firelist['Year'] <= 2022)]
+    fires_df = firelist[(~firelist['Event_ID'].str.contains('HI|AK', na=False))]
 
     # If we should avoid selecting FIDs for fires whose data already exists, then mask these FIDs out
     if skip_exist:
@@ -320,7 +321,8 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
-    temp_id = 'AZ3338011031820240727'
+    caldor_id = 'CA3858612053820210815'
+    temp_id = 'MT4501410633520200714'
 
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     get_pyr_data = True
