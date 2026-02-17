@@ -4,6 +4,12 @@ notes.txt
 src/temp*
 src/*/temp*
 
+# Notebooks, slurm files, checkpoints for ML model
+*.ipynb
+*.slurm
+wandb/
+checkpoints/
+
 # Make output data/visualization private (for now)
 output/
 

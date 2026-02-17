@@ -1,0 +1,78 @@
+{
+  "frp/frp": {
+    "min": 0.0,
+    "max": 0.5603628158569336
+  },
+  "landfire/fbfm13": {
+    "min": 1.0,
+    "max": 99.0
+  },
+  "landfire/fbfm40": {
+    "min": 91.0,
+    "max": 203.0
+  },
+  "landfire/asp": {
+    "min": -1.0,
+    "max": 359.0
+  },
+  "landfire/elev": {
+    "min": 0.0,
+    "max": 3640.0
+  },
+  "landfire/slpd": {
+    "min": 0.0,
+    "max": 76.0
+  },
+  "fuel_topo/adj": {
+    "min": 1.0,
+    "max": 1.0
+  },
+  "fuel_topo/cbd": {
+    "min": 0.0,
+    "max": 45.0
+  },
+  "fuel_topo/cbh": {
+    "min": 0.0,
+    "max": 100.0
+  },
+  "fuel_topo/cc": {
+    "min": 0.0,
+    "max": 95.0
+  },
+  "fuel_topo/ch": {
+    "min": 0.0,
+    "max": 430.0
+  },
+  "high_res_climate/lh": {
+    "min": 30.0,
+    "max": 206.5260009765625
+  },
+  "high_res_climate/lw": {
+    "min": 60.0,
+    "max": 172.33473205566406
+  },
+  "high_res_climate/m1": {
+    "min": 0.596290647983551,
+    "max": 59.99999237060547
+  },
+  "high_res_climate/m10": {
+    "min": 1.6003130674362183,
+    "max": 59.571170806884766
+  },
+  "high_res_climate/m100": {
+    "min": 3.3456950187683105,
+    "max": 38.16156768798828
+  },
+  "high_res_climate/wd": {
+    "min": 0.0,
+    "max": 360.0
+  },
+  "high_res_climate/ws": {
+    "min": 0.0,
+    "max": 44.061767578125
+  },
+  "landfire/roads": {
+    "min": 0.0,
+    "max": 23.0
+  }
+}
