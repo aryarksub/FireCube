@@ -1,0 +1,72 @@
+seed: 123
+
+data:
+  base_path: /extra/datalab_scratch0/firecube_data
+  batch_size: 32
+  shuffle: true
+  num_workers: 2
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  target_var: fire_spread/fperim
+  step_hours: 12
+  horizon_hours: 12
+  hourly_agg: concat
+  missing_value: -1.0
+  compute_stats: false
+  stats_path: src/ml/normalization.json
+  stats_sample_limit: null
+  required_vars:
+    - fire_spread/fline
+    - fire_spread/fperim
+    - fire_spread/nfp
+    - frp/frp
+    - fuel_topo/adj
+    - fuel_topo/cbd
+    - fuel_topo/cbh
+    - fuel_topo/cc
+    - fuel_topo/ch
+    - high_res_climate/lh
+    - high_res_climate/lw
+    - high_res_climate/m1
+    - high_res_climate/m10
+    - high_res_climate/m100
+    - high_res_climate/wd
+    - high_res_climate/ws
+    - landfire/evt
+    - landfire/fbfm13
+    - landfire/fbfm40
+    - landfire/roads
+    - landfire/asp
+    - landfire/elev
+    - landfire/slpd
+
+model:
+  patch: 2
+  dim: 128
+  depth: 6
+  heads: 4
+  mlp_dim: 512
+  out_ch: 1
+
+train:
+  loss_type: diffusion
+  max_steps: 10000
+  val_every_steps: 50
+  max_val_batches: 10
+  val_visual_every: 1
+  lr: 0.0003
+  weight_decay: 0.0000001
+  device: cuda
+  log_every: 10
+  log_images_every: 100
+  sample_steps: 32
+  show_pred_vs_gt: false
+  ckpt_every_n_steps: 500
+  ckpt_dir: checkpoints
+
+wandb:
+  enabled: true
+  project: firecube
+  run_name: vit-diffusion
+  mode: online
