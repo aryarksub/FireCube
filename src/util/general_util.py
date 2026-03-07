@@ -43,6 +43,8 @@ var_types = [subdir_type_original, subdir_type_converted, subdir_type_resample]
 
 data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_topo, subdir_landfire, subdir_firespread]#, subdir_frp]
 
+NEW_FIRES_FILE = os.path.join('src', 'temp_new_fids.txt')
+
 def create_dirs_for_fire(fid):
     """
     Create the required directories for the given fire.
@@ -206,7 +208,7 @@ def get_output_data_filename(fid, var, batch_dir):
 
 def get_all_var_and_output_tifs_for_fire(fid, exclude=[]):
     """
-    Get a list of all temporary variable data files and output data files for the given fire. Also, exclude
+    Get a list of all temporary variable data files and output data file names for the given fire. Also, exclude
     any specified data sources.
 
     Args:
@@ -241,6 +243,22 @@ def get_all_var_and_output_tifs_for_fire(fid, exclude=[]):
             )
             out_tifs.append(out_tif)
     return var_tifs, out_tifs
+
+def get_all_tifs_in_output_dir_for_fire(fid):
+    """
+    Get a list of all output variable data files existing in the output directory for the given fire.
+
+    Args:
+        fid (str): Fire event ID.
+
+    """
+    out_tifs = []
+    for root, dirs, files in os.walk(os.path.join(dir_output, dir_cubes, fid)):
+        for file in files:
+            full_path = os.path.join(root, file)
+            if full_path.endswith('.tif') and subdir_firespread not in full_path and subdir_vis not in full_path:
+                out_tifs.append(full_path)
+    return out_tifs
 
 def to_datetime(date):
     """
@@ -354,7 +372,7 @@ def get_tif_vars_in_dir(dir):
         dir = Path(dir)
     return [f.stem for f in dir.glob('*.tif')]
 
-def create_multi_animation_from_tifs(in_tifs, out_file, start_time):
+def create_multi_animation_from_tifs(in_tifs, out_file, start_time, num_steps=None):
     """
     Create an animation plot of the given TIF files from the given start time.
 
@@ -362,6 +380,8 @@ def create_multi_animation_from_tifs(in_tifs, out_file, start_time):
         in_tifs (list): Name of input variable TIF files.
         out_file (str): Path of where output video should be stored.
         start_time (datetime.datetime): Datetime object representing start time of the plot/data.
+        num_steps (int, optional): Number of time steps to include in the animation. If None, calculate based on
+        TIF band counts. Defaults to None.
     """
     def get_data_and_extent(tif):
         with rasterio.open(tif) as src:
@@ -400,6 +420,10 @@ def create_multi_animation_from_tifs(in_tifs, out_file, start_time):
         all_data.append(data)
         all_extents.append(extent)
         max_t = max(max_t, data.shape[0]) # number of bands or 1
+    # Since fire spread TIFs are 12-hourly, use num_steps if it is given to capture full fire spread duration instead of just 12 hours (1 band)
+    if subdir_firespread in out_file:
+        max_t = max(max_t, num_steps) if num_steps is not None else max_t
+    print(f'out_file: {out_file}, max_t: {max_t}')
 
     base  = start_time
     times = [base + timedelta(hours=i) for i in range(max_t)]
@@ -439,7 +463,7 @@ def create_multi_animation_from_tifs(in_tifs, out_file, start_time):
     ani.save(out_file, writer='ffmpeg', fps=10)
     plt.close()
 
-def create_multi_animation_for_dir(dir, out_file, start_time):
+def create_multi_animation_for_dir(dir, out_file, start_time, num_steps=None):
     """
     Create an animation plot of the TIF files in the given directory starting from the given start time.
 
@@ -447,11 +471,13 @@ def create_multi_animation_for_dir(dir, out_file, start_time):
         dir (str): Name of directory from which TIF files should be used for plotting.
         out_file (str): Path of where output video should be stored.
         start_time (datetime.datetime): Datetime object representing start time of the plot/data.
+        num_steps (int, optional): Number of time steps to include in the animation. If None, calculate based on
+        TIF band counts. Defaults to None.
     """
     tif_files = [
         os.path.join(dir, f) for f in os.listdir(dir) if f.endswith(".tif")
     ]
-    create_multi_animation_from_tifs(tif_files, out_file, start_time)
+    create_multi_animation_from_tifs(tif_files, out_file, start_time, num_steps=num_steps)
 
 def remove_temp_dir_files(fid, del_dir_types=[], del_data_sources=[], del_var_types=[], remove_intermediate=False, verbose=False):
     """
@@ -497,3 +523,22 @@ def remove_temp_dir_files(fid, del_dir_types=[], del_data_sources=[], del_var_ty
                     file_path = os.path.join(dir_path, fname)
                     if os.path.isfile(file_path):
                         os.remove(os.path.join(dir_path, fname))
+
+def add_to_new_fires_list(new_fid, suffix='1'):
+    """
+    Add the given fire event ID to the list of new fires.
+
+    Args:
+        new_fid (str): Fire event ID to add to the list.
+    """
+    new_fires_file = NEW_FIRES_FILE.replace('.txt', f'_{suffix}.txt')
+    if not os.path.exists(new_fires_file):
+        with open(new_fires_file, 'w') as f:
+            f.write(f"{new_fid}\n")
+        return
+    with open(new_fires_file, 'r') as f:
+        existing_fids = set(line.strip() for line in f)
+    existing_fids.add(new_fid)
+    with open(new_fires_file, 'w') as f:
+        for fid in sorted(existing_fids):
+            f.write(f"{fid}\n")
