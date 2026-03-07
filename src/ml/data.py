@@ -15,6 +15,7 @@ DEFAULT_REQUIRED_VARS = [
     "fire_spread/fline",
     "fire_spread/fperim",
     "fire_spread/nfp",
+    "fire_spread/burned_state",
     "frp/frp",
     "fuel_topo/adj",
     "fuel_topo/cbd",
@@ -130,6 +131,48 @@ class GeoTiffDatasetStructured(Dataset):
 
     def __len__(self):
         return len(self.fire_events)
+    
+    def _add_burned_state(self, batch):
+        vars_all = batch["variables"]
+
+        required = [
+            "fire_spread/fperim",
+            "fire_spread/fline",
+            "fire_spread/nfp",
+        ]
+
+        if not all(k in vars_all for k in required):
+            return  # Cannot build burned state
+
+        fperim = vars_all["fire_spread/fperim"]["data"]
+        fline  = vars_all["fire_spread/fline"]["data"]
+        nfp    = vars_all["fire_spread/nfp"]["data"]
+
+        T, H, W = fperim.shape
+        burned = torch.zeros((T, H, W), dtype=torch.float32)
+
+        for t in range(T):
+            perim = fperim[t]
+            line  = fline[t]
+            new   = nfp[t]
+
+            active = (line > 0) | (new > 0)
+            inside = (perim > 0)
+
+            burned[t][active] = 1
+            burned[t][inside & ~active] = 2
+
+        var_key = "fire_spread/burned_state"
+        var_entry = {
+            "var_name": "burned_state",
+            "category": "fire_spread",
+            "data": burned,
+            "shape": tuple(burned.shape),
+            "files": [],
+        }
+
+        batch["variables"][var_key] = var_entry
+        batch["categories"].setdefault("fire_spread", {})["burned_state"] = var_entry
 
     def __getitem__(self, idx):
         event_name, event_path = self.fire_events[idx]
@@ -173,6 +216,7 @@ class GeoTiffDatasetStructured(Dataset):
                 batch["variables"][var_key] = var_entry
                 batch["categories"].setdefault(category_dir, {})[var_name] = var_entry
 
+        self._add_burned_state(batch)
         return batch
 
 
@@ -214,7 +258,7 @@ class OneStepDatasetSimple(Dataset):
         self.stats = stats or {}
 
         self.fire_vars = [v for v in required_vars if v.split("/")[0] in ("fire_spread", "frp")]
-        self.hourly_vars = [v for v in required_vars if v.split("/")[0] in ("high_res_climate",)]
+        self.hourly_vars = [v for v in required_vars if v.split("/")[0] in ("high_res_climate", "low_res_climate")]
         self.static_vars = [v for v in required_vars if v.split("/")[0] in ("fuel_topo", "landfire")]
         self.sample_index = self._build_sample_index()
 
@@ -269,6 +313,9 @@ class OneStepDatasetSimple(Dataset):
 
     def _target_timesteps_for_event(self, event_path: str) -> int:
         category, var = self.target_var.split("/", 1)
+        # Use fperim to determine timesteps since there is no file for burned_state (it is derived on the fly)
+        if var == "burned_state":
+            var = "fperim" 
         category_path = os.path.join(event_path, category)
         if not os.path.isdir(category_path):
             return 0
