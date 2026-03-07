@@ -35,7 +35,7 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
         return True
     
     # If LANDFIRE server is not healthy, download will fail (indicate as such and end process)
-    health_response = requests.get(LF_HEALTH_URL)
+    health_response = requests.get(LF_HEALTH_URL, timeout=30)
     health_data = health_response.json()
     healthy = health_data['success']
     if not healthy:
@@ -59,7 +59,7 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
             job_payload["Resample_Resolution"] = resample_res
 
     # Submit request to get data and retrieve corresponding job ID
-    submit_response = requests.post(LF_JOB_URL, json=job_payload)
+    submit_response = requests.post(LF_JOB_URL, json=job_payload, timeout=120)
     submit_data = submit_response.json()
     job_id = submit_data.get("jobId")
     status_payload = {
@@ -70,7 +70,7 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
     status = "Executing"
     while status == "Executing" or status == "Pending":
         time.sleep(10) 
-        status_response = requests.post(LF_STATUS_URL, json=status_payload)
+        status_response = requests.post(LF_STATUS_URL, json=status_payload, timeout=120)
         status_data = status_response.json()
         status = status_data.get("status")
 
@@ -78,7 +78,21 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
     if status == "Succeeded":
         download_url = status_data['outputFile']
         if download_url:
-            result_response = requests.get(download_url)
+            # # New method: Use streaming download with explicit chunking for large files
+            # try:
+            #     with requests.get(download_url, stream=True, timeout=600) as r:
+            #         r.raise_for_status()
+            #         with open(out_file, "wb") as f:
+            #             for chunk in r.iter_content(chunk_size=8192):
+            #                 if chunk:
+            #                     f.write(chunk)
+            #     return True
+            # except Exception as e:
+            #     print(f"Error downloading LANDFIRE data: {e}")
+            #     return False
+            
+            # Old method (maybe had issues with chunking large files repeatedly?)
+            result_response = requests.get(download_url, timeout=600)
             with open(out_file, "wb") as f:
                 f.write(result_response.content)
             return True
