@@ -7,8 +7,24 @@ from rasterio.transform import Affine, from_origin
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 import xarray as xr
+import multiprocessing as mpc
+import os
+import psutil
 
 from util.validation_util import GLOBAL_NULL_VALUE
+
+TOT_THREADS = mpc.cpu_count()
+USE_THREADS = max(1, TOT_THREADS // 4)
+
+os.environ["GDAL_NUM_THREADS"] = str(USE_THREADS)
+# Get available system memory (bytes)
+available_ram = psutil.virtual_memory().available
+# Use 20% of available RAM
+gdal_cache_mb = int(available_ram * 0.2 / 1024 / 1024)
+# Clamp to reasonable bounds
+gdal_cache_mb = max(1024, min(gdal_cache_mb, 16384))
+os.environ["GDAL_CACHEMAX"] = str(gdal_cache_mb)
+
 
 def bufferbnds(bnds, res=0.005, bufgd=1):
     """
@@ -156,7 +172,8 @@ def change_tif_crs(in_tif_file, out_tif_file, new_crs):
                     src_crs=src.crs,
                     dst_transform=transform,
                     dst_crs=new_crs,
-                    resampling=Resampling.nearest  # or bilinear/cubic etc.
+                    resampling=Resampling.nearest,  # or bilinear/cubic etc.
+                    num_threads=USE_THREADS
                 )
 
 def resample_tif(in_tif, out_tif, target_res=None, catype=False):
@@ -176,6 +193,7 @@ def resample_tif(in_tif, out_tif, target_res=None, catype=False):
     Raises:
         ValueError: Occurs if the input TIF file has a non-projected CRS
     """
+    # print(f"Resampling {in_tif} to {out_tif} with target resolution {target_res} and catype={catype}")
     resampling = Resampling.nearest if catype else Resampling.bilinear
 
     with rasterio.open(in_tif) as src:
@@ -203,15 +221,29 @@ def resample_tif(in_tif, out_tif, target_res=None, catype=False):
         profile.update(
             transform=transform,
             width=width,
-            height=height
+            height=height,
+            tiled=True,
+            blockxsize=512,
+            blockysize=512,
+            interleave="band",
+            compress="lzw",
         )
 
         with rasterio.open(out_tif, "w", **profile) as dst:
-            data = src.read(
-                out_shape=(src.count, height, width),
-                resampling=resampling
-            )
-            dst.write(data)
+            chunk_size = 32  # tune this
+
+            for b in range(1, src.count + 1, chunk_size):
+                band_range = list(range(b, min(b + chunk_size, src.count + 1)))
+
+                reproject(
+                    source=rasterio.band(src, band_range),
+                    destination=rasterio.band(dst, band_range),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs=src.crs,
+                    resampling=resampling
+                )
 
 def crop_tif_based_on_area(in_tif, out_tif, bounds):
     """
@@ -340,7 +372,8 @@ def pad_tif_to_bounds(in_tif, out_tif, bounds):
     with rasterio.open(in_tif) as src:
         original_data = src.read()
         original_bounds = src.bounds
-        dtype = src.dtypes[0]
+        # Assume the data type is float if the original data type is a float type; otherwise, use float32 to allow for NaN values
+        dtype = src.dtypes[0] if 'float' in src.dtypes[0] else 'float32'
         count = src.count
 
         xres, yres = src.res
@@ -373,10 +406,11 @@ def pad_tif_to_bounds(in_tif, out_tif, bounds):
         new_transform = from_origin(bounds.left, bounds.top, xres, yres)
 
         # Create empty array filled with zeros
-        padded_data = np.zeros((count, new_height, new_width), dtype=dtype)
+        # padded_data = np.zeros((count, new_height, new_width), dtype=dtype)
+        padded_data = np.full((count, new_height, new_width), np.nan, dtype=dtype)
 
         # Copy original data into the padded array
-        padded_data[:, row_offset:row_offset + src.height, col_offset:col_offset + src.width] = original_data
+        padded_data[:, row_offset:row_offset + src.height, col_offset:col_offset + src.width] = original_data.astype(dtype)
 
         # Update metadata
         profile = src.profile.copy()
