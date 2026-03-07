@@ -56,6 +56,9 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     # Add time-buffer to DataFrame
     df_t_with_buffer = proc_util.add_time_buffers(df_t)
 
+    # print('Original fire start/end', df_t.min(), df_t.max())
+    # print('Buffered fire start/end', df_t_with_buffer.min(), df_t_with_buffer.max())
+
     # Convert gdf_perim to EPSG:5070
     gdf_fperim_5070 = gdf_fperim_rd.to_crs('EPSG:5070') 
     bounds_5070 = gdf_fperim_5070.total_bounds
@@ -65,12 +68,19 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     center_lat = round((fire_row['lat0'].values[0] + fire_row['lat1'].values[0]) / 2, 2)
     center_lon = round((fire_row['lon0'].values[0] + fire_row['lon1'].values[0]) / 2, 2)
    
-    #Convert from LST to UTC (inverting FEDS method for computing local time)
-    df_t_with_buffer = df_t_with_buffer - pd.to_timedelta(round(center_lon / 15), unit="hours")
+    # Convert from LST to UTC (inverting FEDS method for computing local time)
+    # Add one hour for alignnment from LST to UTC, but this is a rough estimate since the actual time shift depends on the 
+    # longitude of the fire and the time of year (daylight savings time).
+    conversion_delta = pd.to_timedelta(1, unit="hours") - pd.to_timedelta(round(center_lon / 15), unit="hours")
+    df_t_with_buffer = df_t_with_buffer + conversion_delta
+
+    # print('Buffered fire start/end after LST to UTC conversion', df_t_with_buffer.min(), df_t_with_buffer.max())
 
     fire_start = pd.Timestamp(df_t_with_buffer.min().normalize())
     fire_end = pd.Timestamp(df_t_with_buffer.max().normalize()) + pd.Timedelta(hours=23)
     fire_hours = int( (fire_end - fire_start).total_seconds() / 3600)
+
+    # print('Fire start/end after normalization + num hours', fire_start, fire_end, fire_hours)
 
     # ERA5 download
     if len(era5_vars) != 0:
@@ -106,17 +116,28 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         if verbose: print(f'No LANDFIRE variables specified; not getting LANDFIRE data for fire {fid}')       
 
     # Crop era5/pyr/lf tifs to just surround the fire perim (ignore FEDS data for cropping since it needs to be padded)
-    non_feds_input_tifs, non_feds_output_tifs = gen_util.get_all_var_and_output_tifs_for_fire(
+    # The output TIFs here are pre-processing and may not exist yet
+    non_feds_input_tifs, pre_proc_non_feds_output_tifs = gen_util.get_all_var_and_output_tifs_for_fire(
         fid, exclude=[gen_util.subdir_feds]
     )
-    # If there are no output tifs, then stop processing
-    if len(non_feds_output_tifs) == 0:
+    # The output TIFs here are post-processing and may not exist if the fire is being processed for the first time
+    post_proc_non_feds_output_tifs = gen_util.get_all_tifs_in_output_dir_for_fire(fid)
+
+    # print(len(non_feds_input_tifs), len(pre_proc_non_feds_output_tifs), len(post_proc_non_feds_output_tifs))
+
+    # If no output TIFs do not exist, stop processing (there is an issue)
+    if len(post_proc_non_feds_output_tifs) == 0 and len(pre_proc_non_feds_output_tifs) == 0:
         if verbose:
             print(f'No output TIFs were created - stopping processing for fire {fid}')
         return
-
-    # Make all non-FEDS TIFs centered and cropped to the same region
-    proc_util.center_and_crop_tifs_to_same_area(non_feds_input_tifs, non_feds_output_tifs, bounds_5070)
+    # If we have pre-processing output TIF file names but not post-processing output TIF file names, then do the necessary cropping
+    elif len(post_proc_non_feds_output_tifs) == 0 and len(pre_proc_non_feds_output_tifs) != 0:
+        non_feds_output_tifs = pre_proc_non_feds_output_tifs
+        # Make all non-FEDS TIFs centered and cropped to the same region
+        proc_util.center_and_crop_tifs_to_same_area(non_feds_input_tifs, non_feds_output_tifs, bounds_5070)
+    # Otherwise, we have post-processing output TIFs, so continue with those
+    else:
+        non_feds_output_tifs = post_proc_non_feds_output_tifs
 
     # Bounding box for all variable/layer tifs is the same, so we can just take the box for the first tif
     largest_var_tif_bounds = proc_util.get_tif_bounds(non_feds_output_tifs[0])
@@ -127,12 +148,12 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         feds_util.driver_feds(
             fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, 
             plot_orig=True if gen_util.subdir_feds in plot else False,
-            use_prev=False
+            use_prev=False, conv_delta=conversion_delta
         )
         feds_util.driver_frp(
             fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, 
             plot_orig=True if gen_util.subdir_feds in plot else False,
-            use_prev=False
+            use_prev=False, conv_delta=conversion_delta
         )
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
@@ -142,11 +163,15 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
 
     # Convert all null values (-1/-9999) to np.nan
     for var_tif in all_variable_output_tifs:
-        # phi values are allowed to be -1, but this is considered null data for other variables
-        if 'phi' in var_tif:
-            proc_util.convert_null_values_to_nan(in_tif=var_tif, out_tif=var_tif)
-        else:
-            proc_util.convert_null_values_to_nan(in_tif=var_tif, out_tif=var_tif, null_values=[valid_util.GLOBAL_NULL_VALUE, -1])
+        # If the output file does not exist, just skip it
+        try:
+            # phi values are allowed to be -1, but this is considered null data for other variables
+            if 'phi' in var_tif:
+                proc_util.convert_null_values_to_nan(in_tif=var_tif, out_tif=var_tif)
+            else:
+                proc_util.convert_null_values_to_nan(in_tif=var_tif, out_tif=var_tif, null_values=[valid_util.GLOBAL_NULL_VALUE, -1])
+        except:
+            pass
 
     # # Validate all downloaded data
     # valid_data, invalid_layers, invalid_spatial_layers, missing_layers = valid_util.validate_one_fire_data(fid)
@@ -171,10 +196,11 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
                 if verbose:
                     print(f'Generating plot for batch {batch} - fire {fid}')
                 try:
+                    # Add 1 to fire_hours since we want to go up to midnight of next day
                     gen_util.create_multi_animation_for_dir(
                         os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, batch),
                         gen_util.get_output_data_filename(fid, batch, gen_util.subdir_vis),
-                        fire_start
+                        fire_start, num_steps=fire_hours+1
                     )
                 except:
                     pass
@@ -198,6 +224,8 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         remove_intermediate=del_intermediate,
         verbose=verbose
     )
+
+    # gen_util.add_to_new_fires_list(fid, '5')
 
 def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False):
     """
@@ -253,7 +281,7 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
             if verbose:
                 print(f'Error when reading file {fid_file} - no processing will be done')
 
-def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method='random', skip_exist=True):
+def random_select_fids(n=5, size_threshold=None, min_size=1000, duration_threshold=None, method='random', skip_exist=True):
     """
     Select n fire event IDs from the entire list of fires based on a given size and duration threshold. Selection
     can be done either randomly (method='random') or by selecting the largest fires (method='size'). If the number
@@ -263,6 +291,7 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
     Args:
         n (int, optional): Number of fire event IDs to return. Defaults to 10.
         size_threshold (int, optional): Upper bound of fire size in terms of burned area. Defaults to None.
+        min_size (int, optional): Lower bound of fire size in terms of burned area. Defaults to 1000 acres.
         duration_threshold (int, optional): Upper bound of fire duration in days. Defaults to None.
         method (str, optional): Method by which FIDs should be selected (random, size). Defaults to 'random'.
         skip_exist (bool, optional): True if FIDs that already have downloaded data should be exempt from 
@@ -276,8 +305,13 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
         list: List of FIDs that meet the given size/duration thresholds.
     """
     existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
+    remote = []
+    with open(os.path.join('src', 'temp_existing_fids.txt'), 'r', encoding='utf-8') as f:
+        for line in f:
+            remote.append(line.strip())
+    existing_fids = list(set(existing_fids).union(set(remote)))
 
-    fires_df = firelist[(~firelist['Event_ID'].str.contains('HI|AK', na=False))]
+    fires_df = firelist[(~firelist['Event_ID'].str.contains('HI', na=False))]
 
     # If we should avoid selecting FIDs for fires whose data already exists, then mask these FIDs out
     if skip_exist:
@@ -289,16 +323,19 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
             fires_df = fires_df[fires_df['BurnBndAc'] < size_threshold]
         else:
             raise ValueError('Size threshold for filtering must be at least 1000 acres')
+    
+    fires_df = fires_df[fires_df['BurnBndAc'] >= min_size]
         
     # Filter based on duration threshold if it is provided
     if duration_threshold is not None:
         if duration_threshold >= 1:
             fires_df = fires_df[
-                (pd.to_datetime(fires_df['ted']).dt.normalize() - pd.to_datetime(fires_df['tst'])).dt.days.between(1, duration_threshold)
+                (pd.to_datetime(fires_df['ted']).dt.normalize() - pd.to_datetime(fires_df['tst'])).dt.days.between(0, duration_threshold)
             ]
         else:
             raise ValueError('Duration threshold for filtering must be at least 1 day')
         
+    print(fires_df.shape[0], 'fires meet the given size/duration thresholds and do not already have downloaded data')
     # Select n FIDs if there are that many; otherwise, select all available FIDs
     num_to_select = min(n, fires_df.shape[0])
     
@@ -318,26 +355,49 @@ def random_select_fids(n=5, size_threshold=None, duration_threshold=None, method
 
     return sample_fids
 
+def get_all_existing_fids():
+    """
+    Get list of all fire event IDs for which data has already been downloaded and processed 
+    (i.e. there is a folder for the fire in output/cubes).
+
+    Returns:
+        list: List of fire event IDs for which data has already been downloaded and processed.
+    """
+    existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
+    return existing_fids
+
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
     caldor_id = 'CA3858612053820210815'
-    temp_id = 'MT4501410633520200714'
+    temp_id = 'WY4498410652920200817'
 
+    # To skip ERA5 download, set era5_vars = []
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
+    # To skip Pyregence download, set do_pyr = False
     get_pyr_data = True
+    # To skip LANDFIRE download, set lf_vars = []
     lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40', 'ROADS']
+    # To skip FEDS rasterization, set do_feds = False
     rasterize_feds = True
+    # To skip plotting, set plot_sources = []
     plot_sources = []
+    existing_fids = get_all_existing_fids()
+    # for x in existing_fids:
+    #     print(x)
     
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
-    do_sample_fids = False
+    do_sample_fids = True
 
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=1, size_threshold=100000, duration_threshold=28, method='random')
+        # fids_to_use = random_select_fids(n=50, size_threshold=25000, min_size=10000, duration_threshold=150, method='random')
+        # fids_to_use = random_select_fids(n=50, size_threshold=10000, min_size=5000, duration_threshold=150, method='random')
+        # fids_to_use = random_select_fids(n=50, size_threshold=5000, min_size=3000, duration_threshold=150, method='random')
+        # fids_to_use = random_select_fids(n=50, size_threshold=3000, min_size=2000, duration_threshold=150, method='random')
+        fids_to_use = random_select_fids(n=50, size_threshold=2000, min_size=1000, duration_threshold=150, method='random')
     else:
-        fids_to_use = [temp_id]
+        fids_to_use = [temp_id] #existing_fids
     
     # Standard procedure is to use del_sources=gen_util.data_sources to delete temporary created data files
     process_multiple_fires(
