@@ -1,6 +1,7 @@
 import os
 import glob
 import re
+import csv
 from typing import Dict, List, Optional
 from functools import partial
 
@@ -16,7 +17,7 @@ DEFAULT_REQUIRED_VARS = [
     "fire_spread/fperim",
     "fire_spread/nfp",
     "fire_spread/burned_state",
-    "frp/frp",
+    "fire_spread/frp",
     "fuel_topo/adj",
     "fuel_topo/cbd",
     "fuel_topo/cbh",
@@ -101,13 +102,18 @@ class GeoTiffDatasetStructured(Dataset):
     def __init__(self, base_path: str):
         self.base_path = base_path
         self.fire_events = self._discover_fire_events()
+        self._fire_time_cache: Dict[str, Optional[Dict]] = {}
 
     def _discover_fire_events(self):
         fire_events = []
         for event_dir in sorted(os.listdir(self.base_path)):
             event_path = os.path.join(self.base_path, event_dir)
-            if os.path.isdir(event_path):
-                fire_events.append((event_dir, event_path))
+            if not os.path.isdir(event_path):
+                continue
+            # Only keep events that have the alignment CSV.
+            if not os.path.exists(os.path.join(event_path, "fire_times.csv")):
+                continue
+            fire_events.append((event_dir, event_path))
         return fire_events
 
     def _canonical_landfire_var(self, var_name: str) -> str:
@@ -128,6 +134,114 @@ class GeoTiffDatasetStructured(Dataset):
         if re.search(r"slpd", v):
             return "slpd"
         return var_name
+
+    def _load_fire_time_info(self, event_path: str) -> Dict:
+        # Read fire_times.csv to determine the time alignment between FEDS
+        # and other variables.
+        if event_path in self._fire_time_cache:
+            cached = self._fire_time_cache[event_path]
+            return cached
+
+        csv_path = os.path.join(event_path, "fire_times.csv")
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"Missing fire_times.csv in {event_path}")
+
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        def _as_bool(x) -> bool:
+            return str(x).strip().lower() in {"1", "true", "t", "yes", "y"}
+
+        feds_mask_full = [_as_bool(r.get("feds", False)) for r in rows]
+        first_true = next(i for i, v in enumerate(feds_mask_full) if v)
+
+        # Align to 24 hours before the first FEDS detection.
+        start_idx = max(0, first_true - 24)
+        feds_mask = feds_mask_full[start_idx:]
+        feds_true_idx = [i for i, v in enumerate(feds_mask) if v]
+        times = [r.get("time") for r in rows[start_idx:]]
+
+        info = {
+            "start_idx": start_idx,
+            "length": len(feds_mask),
+            "feds_mask": feds_mask,
+            "feds_true_idx": feds_true_idx,
+            "times": times,
+        }
+        self._fire_time_cache[event_path] = info
+        return info
+
+    def _slice_or_pad_dynamic(self, data: torch.Tensor, time_info: Optional[Dict]) -> torch.Tensor:
+        if time_info is None or data.shape[0] <= 1:
+            return data
+
+        start_idx = int(time_info["start_idx"])
+        T_out = int(time_info["length"])
+        T = int(data.shape[0])
+        H, W = data.shape[-2:]
+
+        if T == T_out:
+            return data
+
+        sliced = data[start_idx : min(T, start_idx + T_out)]
+        if sliced.shape[0] == T_out:
+            return sliced
+
+        if sliced.shape[0] == 0:
+            return torch.zeros((T_out, H, W), dtype=data.dtype)
+
+        # Pad missing tail by repeating the last available frame.
+        pad_n = T_out - sliced.shape[0]
+        tail = sliced[-1:].repeat(pad_n, 1, 1)
+        return torch.cat([sliced, tail], dim=0)
+
+    def _expand_fire_to_hourly(self, data: torch.Tensor, time_info: Optional[Dict]) -> torch.Tensor:
+        if time_info is None or data.shape[0] <= 1:
+            return data
+
+        T_src, H, W = data.shape
+        T_out = int(time_info["length"])
+        feds_true_idx = list(time_info["feds_true_idx"])
+        if T_out <= 0:
+            return data
+        if not feds_true_idx:
+            return torch.zeros((T_out, H, W), dtype=data.dtype)
+
+        n_obs = min(int(T_src), len(feds_true_idx))
+        obs_pos = feds_true_idx[:n_obs]
+
+        out = torch.zeros((T_out, H, W), dtype=data.dtype)
+        if n_obs <= 0:
+            return out
+
+        repeats = []
+        for i in range(n_obs - 1):
+            repeats.append(max(0, obs_pos[i + 1] - obs_pos[i]))
+        repeats.append(max(0, T_out - obs_pos[-1]))
+
+        rep = torch.tensor(repeats, dtype=torch.long)
+        valid = rep > 0
+        if not torch.any(valid):
+            return out
+
+        expanded_tail = torch.repeat_interleave(data[:n_obs][valid], rep[valid], dim=0)
+        start = obs_pos[int(torch.nonzero(valid, as_tuple=False)[0].item())]
+        end = min(T_out, start + expanded_tail.shape[0])
+        out[start:end] = expanded_tail[: end - start]
+        return out
+
+    def _apply_time_alignment(
+        self, category_dir: str, data: torch.Tensor, event_time_info: Optional[Dict]
+    ) -> torch.Tensor:
+        if data.ndim != 3 or data.shape[0] <= 1:
+            return data
+        if event_time_info is None:
+            return data
+        if category_dir == "fire_spread":
+            return self._expand_fire_to_hourly(data, event_time_info)
+        return self._slice_or_pad_dynamic(data, event_time_info)
+
 
     def __len__(self):
         return len(self.fire_events)
@@ -177,6 +291,14 @@ class GeoTiffDatasetStructured(Dataset):
     def __getitem__(self, idx):
         event_name, event_path = self.fire_events[idx]
         batch = {"event_name": event_name, "variables": {}, "categories": {}}
+        event_time_info = self._load_fire_time_info(event_path)
+        batch["time_info"] = {
+            "length": event_time_info["length"],
+            "start_idx": event_time_info["start_idx"],
+            "times": event_time_info["times"],
+            "feds_mask": event_time_info["feds_mask"],
+        }
+
 
         for category_dir in sorted(os.listdir(event_path)):
             category_path = os.path.join(event_path, category_dir)
@@ -198,6 +320,8 @@ class GeoTiffDatasetStructured(Dataset):
                 except Exception as e:
                     print(f"Error loading {tif_file}: {e}")
                     continue
+
+                data = self._apply_time_alignment(category_dir, data, event_time_info)
 
                 var_key = f"{category_dir}/{var_name}"
                 if var_key in batch["variables"]:
@@ -231,6 +355,7 @@ def firecube_collate(batch):
         "event_name": [b["event_name"] for b in batch],
         "variables": [b["variables"] for b in batch],
         "categories": [b["categories"] for b in batch],
+        "time_info": [b["time_info"] for b in batch],
     }
 
 
@@ -257,7 +382,7 @@ class OneStepDatasetSimple(Dataset):
         self.missing_value = missing_value
         self.stats = stats or {}
 
-        self.fire_vars = [v for v in required_vars if v.split("/")[0] in ("fire_spread", "frp")]
+        self.fire_vars = [v for v in required_vars if v.split("/")[0] in ("fire_spread",)]
         self.hourly_vars = [v for v in required_vars if v.split("/")[0] in ("high_res_climate", "low_res_climate")]
         self.static_vars = [v for v in required_vars if v.split("/")[0] in ("fuel_topo", "landfire")]
         self.sample_index = self._build_sample_index()
@@ -344,10 +469,14 @@ class OneStepDatasetSimple(Dataset):
     def _build_sample_index(self):
         index = []
         for event_idx, (_, event_path) in enumerate(self.base.fire_events):
-            T_tgt = self._target_timesteps_for_event(event_path)
-            for t in self._candidate_ts(T_tgt):
-                index.append((event_idx, t))
+            ti = self.base._load_fire_time_info(event_path)
+            T = int(ti["length"])
+            mask = ti["feds_mask"]
+            for t in range(self.step, T - self.horizon, self.step):
+                if mask[t + self.horizon]:
+                    index.append((event_idx, t))
         return index
+
 
     def __len__(self):
         return len(self.sample_index)
@@ -428,8 +557,9 @@ class OneStepDatasetSimple(Dataset):
             data = vars_all[k]["data"]
             frame = data[0]
             frame = _resize_frame(frame, target_size, mode="bilinear")
-            frame = torch.nan_to_num(frame, nan=self.missing_value)
-            frame = torch.where(frame <= -9990.0, torch.full_like(frame, self.missing_value), frame)
+            frame = torch.nan_to_num(frame, nan=0.0)
+            frame = torch.where(frame <= -9990.0, torch.zeros_like(frame), frame)
+
             if _is_continuous(k) and k in self.stats:
                 mn = self.stats[k]["min"]
                 mx = self.stats[k]["max"]
@@ -441,6 +571,9 @@ class OneStepDatasetSimple(Dataset):
 
         t_y = min(t + self.horizon, T_tgt - 1)
         y = tgt[t_y].unsqueeze(0)
+        if self.target_var.split("/")[0] in ("fire_spread"):
+            y = torch.nan_to_num(y, nan=0.0)
+            y = torch.where(y <= -9990.0, torch.zeros_like(y), y)
 
         x_hourly_flat = x_hourly.reshape(-1, *target_size)
         x_all = torch.cat([x_fire, x_hourly_flat, x_static], dim=0)

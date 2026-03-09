@@ -5,7 +5,7 @@ src/temp*
 src/*/temp*
 
 # Notebooks, slurm files, checkpoints for ML model
-*.ipynb
+# *.ipynb
 *.slurm
 wandb/
 checkpoints/

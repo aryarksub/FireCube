@@ -13,7 +13,9 @@ import util.validation_util as valid_util
 # DataFrame of all fires stored by FEDS/MTBS
 firelist = pd.read_csv(feds_util.feds_firelist, index_col=0)
 
-def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False):
+def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], 
+                        batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False,
+                        feds_direct_final_grid=False):
     """
     Driver function to process a single fire. Processing includes downloading data from different sources (ERA5, Pyregence,
     LANDFIRE, FEDS), cropping/rasterizing/resampling as needed, and creating plots of the layers.
@@ -35,6 +37,8 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
          Defaults to gen_util.data_sources.
         del_intermediate (bool, optional): True if intermediate downloaded data (e.g. zip/tar files) should be deleted;
          False otherwise. Defaults to False.
+        feds_direct_final_grid (bool, optional): True to run FEDS/FRP rasterization directly on the final
+         canonical grid for A/B testing; False for legacy rasterize+resample+pad. Defaults to False.
 
     Raises:
         ValueError: Occurs when the downloaded data is invalid (e.g. layer value is outside of min/max range).
@@ -148,12 +152,14 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         feds_util.driver_feds(
             fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, 
             plot_orig=True if gen_util.subdir_feds in plot else False,
-            use_prev=False, conv_delta=conversion_delta
+            use_prev=False, conv_delta=conversion_delta,
+            direct_to_final_grid=feds_direct_final_grid
         )
         feds_util.driver_frp(
             fid, largest_var_tif_bounds, res=300.0, fire_start=fire_start, num_hours=fire_hours, 
             plot_orig=True if gen_util.subdir_feds in plot else False,
-            use_prev=False, conv_delta=conversion_delta
+            use_prev=False, conv_delta=conversion_delta,
+            direct_to_final_grid=feds_direct_final_grid
         )
     else:
         if verbose: print(f'Skipping FEDS data for fire {fid}')
@@ -227,7 +233,9 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
 
     # gen_util.add_to_new_fires_list(fid, '5')
 
-def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False):
+def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, 
+                           plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False, 
+                           feds_direct_final_grid=False):
     """
     Driver function to process multiple fire. Processing includes downloading data from different sources (ERA5, Pyregence,
     LANDFIRE, FEDS), cropping/rasterizing/resampling as needed, and creating plots of the layers. The multiple fires to process
@@ -251,6 +259,7 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
          Defaults to gen_util.data_sources.
         del_intermediate (bool, optional): True if intermediate downloaded data (e.g. zip/tar files) should be deleted;
          False otherwise. Defaults to False.
+        feds_direct_final_grid (bool, optional): True to run FEDS/FRP rasterization directly on the final canonical grid for A/B testing
     """
     if len(fid_list) == 0 and fid_file is None:
         if verbose:
@@ -262,7 +271,10 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
         if verbose:
             print('Processing fires given in list argument')
         for fid in fid_list:
-            process_single_fire(fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate)
+            process_single_fire(
+                fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate,
+                feds_direct_final_grid=feds_direct_final_grid
+            )
             count += 1
             if count % 20 == 0:
                 print(f'Processed {count} fires')
@@ -273,7 +285,10 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
             with open(fid_file, 'r', encoding='utf-8') as file:
                 for line in file:
                     fid = line.strip()
-                    process_single_fire(fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate)
+                    process_single_fire(
+                        fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate,
+                        feds_direct_final_grid=feds_direct_final_grid
+                    )
                     count += 1
                     if count % 20 == 0:
                         print(f'Processed {count} fires')
@@ -389,6 +404,8 @@ if __name__=='__main__':
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
     do_sample_fids = True
+    feds_direct_final_grid = False
+
 
     if do_sample_fids:
         # fids_to_use = random_select_fids(n=50, size_threshold=25000, min_size=10000, duration_threshold=150, method='random')
@@ -403,5 +420,5 @@ if __name__=='__main__':
     process_multiple_fires(
         fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
         verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=gen_util.data_sources,
-        del_intermediate=False
+        del_intermediate=False, feds_direct_final_grid=feds_direct_final_grid
     )
