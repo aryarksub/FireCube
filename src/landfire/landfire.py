@@ -35,7 +35,7 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
         return True
     
     # If LANDFIRE server is not healthy, download will fail (indicate as such and end process)
-    health_response = requests.get(LF_HEALTH_URL, timeout=30)
+    health_response = requests.get(LF_HEALTH_URL, timeout=120)
     health_data = health_response.json()
     healthy = health_data['success']
     if not healthy:
@@ -61,6 +61,7 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
     # Submit request to get data and retrieve corresponding job ID
     submit_response = requests.post(LF_JOB_URL, json=job_payload, timeout=120)
     submit_data = submit_response.json()
+    # print(submit_data)
     job_id = submit_data.get("jobId")
     status_payload = {
         "JobId": job_id
@@ -72,6 +73,7 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
         time.sleep(10) 
         status_response = requests.post(LF_STATUS_URL, json=status_payload, timeout=120)
         status_data = status_response.json()
+        # print(status_data)
         status = status_data.get("status")
 
     # If job succeeds, download the data from the URL specified in job response
@@ -171,15 +173,17 @@ def get_lf_layers_given_vars_and_year(var_names, year, state):
     layers = []
 
     for var in var_names:
-        # ASP/ELEV/SLPD only have one layer name (suffix 2020)
-        if var in ['ASP', 'ELEV', 'SLPD']:
-            layer_name = f'{var}2020'
+        # ASP/ELEV/SLPD only have one layer name
+        if var in ['ASP', 'ELEV']:
+            layer_name = f'LF2020_{var.upper()[0]+var[1:].lower()}'
+        elif var in ['SLPD']:
+            layer_name = f'LF2020_SlpD'
         # EVT/FBFM13/FBFM40 have layer names as defined in maps above
         elif var in ['EVT', 'FBFM13', 'FBFM40']:
             versions = version_lists[var]
             for ind in range(len(year_cutpoints)):
                 if year-1 <= year_cutpoints[ind]:
-                    layer_name = versions[ind]
+                    layer_name = f'LF{year_cutpoints[ind]}_{var}' #versions[ind]
                     break
             else:
                 layer_name = latest_versions[var]
@@ -189,7 +193,7 @@ def get_lf_layers_given_vars_and_year(var_names, year, state):
             if state in {'AK', 'HI'}:
                 continue
             else:
-                layer_name = '240ROADS_23'
+                layer_name = 'LF2023_Roads'
         # Other layer names are not supported by our code
         else:
             print(f'Layer for {var} not in existing cases; will not be included in data download')
