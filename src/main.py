@@ -276,8 +276,8 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
                 feds_direct_final_grid=feds_direct_final_grid
             )
             count += 1
-            if count % 20 == 0:
-                print(f'Processed {count} fires')
+            if count % 10 == 0 or count == len(fid_list):
+                print(f'******* STATUS CHECK: Processed {count} fires *******')
     else:
         if verbose:
             print('Processing fires given in file-path argument')
@@ -385,7 +385,7 @@ if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
     caldor_id = 'CA3858612053820210815'
-    temp_id = 'WY4498410652920200817'
+    temp_id = 'ID4619011508620120721'
 
     # To skip ERA5 download, set era5_vars = []
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
@@ -404,15 +404,11 @@ if __name__=='__main__':
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
     do_sample_fids = True
-    feds_direct_final_grid = False
+    feds_direct_final_grid = True
 
 
     if do_sample_fids:
-        # fids_to_use = random_select_fids(n=50, size_threshold=25000, min_size=10000, duration_threshold=150, method='random')
-        # fids_to_use = random_select_fids(n=50, size_threshold=10000, min_size=5000, duration_threshold=150, method='random')
-        # fids_to_use = random_select_fids(n=50, size_threshold=5000, min_size=3000, duration_threshold=150, method='random')
-        # fids_to_use = random_select_fids(n=50, size_threshold=3000, min_size=2000, duration_threshold=150, method='random')
-        fids_to_use = random_select_fids(n=50, size_threshold=2000, min_size=1000, duration_threshold=150, method='random')
+        fids_to_use = random_select_fids(n=10, size_threshold=5000, min_size=1000, duration_threshold=150, method='random')
     else:
         fids_to_use = [temp_id] #existing_fids
     
