@@ -155,12 +155,15 @@ class GeoTiffDatasetStructured(Dataset):
 
         feds_mask_full = [_as_bool(r.get("feds", False)) for r in rows]
         first_true = next(i for i, v in enumerate(feds_mask_full) if v)
+        last_true = max(i for i, v in enumerate(feds_mask_full) if v)
 
         # Align to 24 hours before the first FEDS detection.
         start_idx = max(0, first_true - 24)
-        feds_mask = feds_mask_full[start_idx:]
+        # End at the final FEDS observation (inclusive).
+        end_idx = last_true + 1
+        feds_mask = feds_mask_full[start_idx:end_idx]
         feds_true_idx = [i for i, v in enumerate(feds_mask) if v]
-        times = [r.get("time") for r in rows[start_idx:]]
+        times = [r.get("time") for r in rows[start_idx:end_idx]]
 
         info = {
             "start_idx": start_idx,
@@ -197,7 +200,7 @@ class GeoTiffDatasetStructured(Dataset):
         return torch.cat([sliced, tail], dim=0)
 
     def _expand_fire_to_hourly(self, data: torch.Tensor, time_info: Optional[Dict]) -> torch.Tensor:
-        if time_info is None or data.shape[0] <= 1:
+        if time_info is None:
             return data
 
         T_src, H, W = data.shape
@@ -234,12 +237,14 @@ class GeoTiffDatasetStructured(Dataset):
     def _apply_time_alignment(
         self, category_dir: str, data: torch.Tensor, event_time_info: Optional[Dict]
     ) -> torch.Tensor:
-        if data.ndim != 3 or data.shape[0] <= 1:
+        if data.ndim != 3:
             return data
         if event_time_info is None:
             return data
         if category_dir == "fire_spread":
             return self._expand_fire_to_hourly(data, event_time_info)
+        if data.shape[0] <= 1:
+            return data
         return self._slice_or_pad_dynamic(data, event_time_info)
 
 
