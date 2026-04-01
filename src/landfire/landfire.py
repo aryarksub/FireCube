@@ -4,6 +4,7 @@ import rasterio
 import requests
 import time
 import zipfile
+from datetime import datetime
 
 import util.general_util as gen_util
 import util.processing_util as proc_util
@@ -144,7 +145,7 @@ def split_tifs_in_zip(zip_path, fid):
                         dst.write(band_data, 1)
                         dst.set_band_description(1, band_name)
 
-def get_lf_layers_given_vars_and_year(var_names, year, state):
+def get_lf_layers_given_vars_and_start_time(var_names, start_time, state):
     """
     Get LANDFIRE layer name for the given variables based on the fire year and state.
 
@@ -156,9 +157,13 @@ def get_lf_layers_given_vars_and_year(var_names, year, state):
     Returns:
         list: List of LANDFIRE layer names (one for each given variable).
     """
-
     # Yearly cutpoints (one for each time LANDFIRE released a new version, based on most recent LANDFIRE reconfiguration)
-    year_cutpoints = [2016,2022,2023]
+    cutoffs = [
+        (datetime(2016, 12, 31), 2016),
+        (datetime(2022, 12, 31), 2022),
+        (datetime(2023, 10, 1), 2023),
+        (datetime(2024, 10, 1), 2024),
+    ]
     # Map of variables EVT/FBFM13/FBFM40 to layer names based on each yearly cutpoint
     version_lists = {
         'EVT': [str(num) + 'EVT' for num in [200,230,240]],
@@ -181,12 +186,13 @@ def get_lf_layers_given_vars_and_year(var_names, year, state):
         # EVT/FBFM13/FBFM40 have layer names as defined in maps above
         elif var in ['EVT', 'FBFM13', 'FBFM40']:
             versions = version_lists[var]
-            for ind in range(len(year_cutpoints)):
-                if year-1 <= year_cutpoints[ind]:
-                    layer_name = f'LF{year_cutpoints[ind]}_{var}' #versions[ind]
-                    break
-            else:
-                layer_name = latest_versions[var]
+            layer_name = None
+            for cutoff, year in cutoffs:
+                if start_time >= cutoff:
+                    layer_name = f'LF{year}_{var}' #versions[ind]
+            if layer_name is None:
+                #NOTE: pass error here if we want to strictly enforce the landfire version to precede the fire
+                layer_name = f'LF{2016}_{var}'
         # ROADS only has layer name 240ROADS_23 for CONUS
         # Currently, the supposed layer for Alaska/Hawaii is 220ROADS_20, but this doesn't work, so skip for now
         elif var in ['ROADS']:
@@ -218,7 +224,7 @@ def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
         RuntimeError: Occurs when LANDFIRE download failed.
     """
     # bounds should be in W,S,E,N format
-    layers = get_lf_layers_given_vars_and_year(var_names, int(fire_start.year), fid[:2])
+    layers = get_lf_layers_given_vars_and_start_time(var_names, fire_start, fid[:2])
     lf_zip_path = gen_util.get_lf_zip_filename(fid)
 
     download_success = download_landfire_data(

@@ -5,6 +5,7 @@ import pyregence.fuel_wx_ign_pb2_grpc as fuel_wx_ign_pb2_grpc
 import rasterio
 import requests
 import tarfile
+from datetime import datetime
 
 import util.general_util as gen_util
 import util.processing_util as proc_util
@@ -41,24 +42,18 @@ def get_landfire_version(start_time):
     Returns:
         str: LANDFIRE version for the given start time/year.
     """
-    # Landfire versioninig based on this naming guide: https://www.landfire.gov/LFNameConvention
-    year = start_time.year
-    lf_year_for_fire = year - 1
-    lf_year_to_version_map = {
-        2024 : '2.5.0',
-        2023 : '2.4.0',
-        2022 : '2.3.0',
-        2020 : '2.2.0',
-        2016 : '2.0.0',
-        2014 : '1.4.0'
-    }
-    version_to_use = None
-    for lf_base_year in lf_year_to_version_map:
-        if lf_year_for_fire <= lf_base_year:
-            version_to_use = lf_year_to_version_map[lf_base_year]
-    if version_to_use is None:
-        raise ValueError(f'No valid LANDFIRE mapping for given year {year} (with LF year {lf_year_for_fire})')
-    return version_to_use
+    # Landfire versioning based on this naming guide: https://www.landfire.gov/LFNameConvention
+    cutoffs = [
+        (datetime(2024, 10, 1),  '2.5.0'),
+        (datetime(2023, 10, 1),  '2.4.0'),
+        (datetime(2022, 12, 31), '2.3.0'),
+        (datetime(2020, 12, 31), '2.2.0'),
+        (datetime(2016, 12, 31), '2.0.0'),
+    ]
+    for cutoff_date, version in cutoffs:
+        if start_time > cutoff_date:
+            return version
+    return '1.4.0'
 
 def download_pyregence_data(
         out_dir, out_file, center, buffer=(60,60,60,60), wx_start_time=None, wx_num_hours=24, redo=False
