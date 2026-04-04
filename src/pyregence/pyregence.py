@@ -48,7 +48,7 @@ def get_landfire_version(start_time):
         (datetime(2023, 10, 1),  '2.4.0'),
         (datetime(2022, 12, 31), '2.3.0'),
         (datetime(2020, 12, 31), '2.2.0'),
-        (datetime(2016, 12, 31), '2.0.0'),
+        #(datetime(2016, 12, 31), '2.0.0'), #NOTE: Pyregence 2.0.0 doesn't seem to work, so we default to 1.4.0
     ]
     for cutoff_date, version in cutoffs:
         if start_time > cutoff_date:
