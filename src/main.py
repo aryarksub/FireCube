@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import geopandas as gpd
+import time
 
 from era5.era5 import driver_era5
 from landfire.landfire import driver_landfire
@@ -15,7 +16,7 @@ firelist = pd.read_csv(feds_util.feds_firelist, index_col=0)
 
 def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, plot=[], 
                         batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False,
-                        feds_direct_final_grid=False):
+                        feds_direct_final_grid=False, remove_old_date=time.mktime((2025, 1, 1, 0, 0, 0, 0, 0, -1))):
     """
     Driver function to process a single fire. Processing includes downloading data from different sources (ERA5, Pyregence,
     LANDFIRE, FEDS), cropping/rasterizing/resampling as needed, and creating plots of the layers.
@@ -39,6 +40,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
          False otherwise. Defaults to False.
         feds_direct_final_grid (bool, optional): True to run FEDS/FRP rasterization directly on the final
          canonical grid for A/B testing; False for legacy rasterize+resample+pad. Defaults to False.
+        remove_old_date (float, optional): Unix timestamp (seconds since epoch) before which files should be removed. Defaults to 1/1/2025.
 
     Raises:
         ValueError: Occurs when the downloaded data is invalid (e.g. layer value is outside of min/max range).
@@ -128,23 +130,34 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     post_proc_non_feds_output_tifs = gen_util.get_all_tifs_in_output_dir_for_fire(fid)
 
     # print(len(non_feds_input_tifs), len(pre_proc_non_feds_output_tifs), len(post_proc_non_feds_output_tifs))
+    # print('INPUT', non_feds_input_tifs)
+    # print('PRE-PROC', pre_proc_non_feds_output_tifs)
+    # print('POST-PROC', post_proc_non_feds_output_tifs)
 
     # If no output TIFs do not exist, stop processing (there is an issue)
     if len(post_proc_non_feds_output_tifs) == 0 and len(pre_proc_non_feds_output_tifs) == 0:
         if verbose:
             print(f'No output TIFs were created - stopping processing for fire {fid}')
         return
-    # If we have pre-processing output TIF file names but not post-processing output TIF file names, then do the necessary cropping
-    elif len(post_proc_non_feds_output_tifs) == 0 and len(pre_proc_non_feds_output_tifs) != 0:
+    # If we have pre-processing output TIF file names, then do the necessary cropping
+    elif len(pre_proc_non_feds_output_tifs) != 0:
         non_feds_output_tifs = pre_proc_non_feds_output_tifs
         # Make all non-FEDS TIFs centered and cropped to the same region
         proc_util.center_and_crop_tifs_to_same_area(non_feds_input_tifs, non_feds_output_tifs, bounds_5070)
     # Otherwise, we have post-processing output TIFs, so continue with those
     else:
         non_feds_output_tifs = post_proc_non_feds_output_tifs
+    
+    non_feds_output_tifs = list(set(non_feds_output_tifs).union(set(post_proc_non_feds_output_tifs)))
+
+    # print(len(non_feds_output_tifs), non_feds_output_tifs)
 
     # Bounding box for all variable/layer tifs is the same, so we can just take the box for the first tif
     largest_var_tif_bounds = proc_util.get_tif_bounds(non_feds_output_tifs[0])
+
+    # print('BOUNDS 5070:', bounds_5070)
+    # for var_tif in non_feds_output_tifs:
+    #     print(proc_util.get_tif_bounds(var_tif))
 
     # FEDS + FRP download/rasterization
     if do_feds:
@@ -169,6 +182,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
 
     # Convert all null values (-1/-9999) to np.nan
     for var_tif in all_variable_output_tifs:
+        # print(f'Processing variable TIF: {var_tif}')
         # If the output file does not exist, just skip it
         try:
             # phi values are allowed to be -1, but this is considered null data for other variables
@@ -231,11 +245,15 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         verbose=verbose
     )
 
-    # gen_util.add_to_new_fires_list(fid, '5')
+    for subdir in [gen_util.subdir_hrc, gen_util.subdir_fuel_topo, gen_util.subdir_landfire]:
+        data_dir = os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, subdir)
+        gen_util.remove_old_files(data_dir, cutoff_timestamp=remove_old_date)
+
+    gen_util.add_to_new_fires_list(fid, '5')
 
 def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, 
                            plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False, 
-                           feds_direct_final_grid=False):
+                           feds_direct_final_grid=False, remove_old_date=time.mktime((2025, 1, 1, 0, 0, 0, 0, 0, -1))):
     """
     Driver function to process multiple fire. Processing includes downloading data from different sources (ERA5, Pyregence,
     LANDFIRE, FEDS), cropping/rasterizing/resampling as needed, and creating plots of the layers. The multiple fires to process
@@ -260,6 +278,7 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
         del_intermediate (bool, optional): True if intermediate downloaded data (e.g. zip/tar files) should be deleted;
          False otherwise. Defaults to False.
         feds_direct_final_grid (bool, optional): True to run FEDS/FRP rasterization directly on the final canonical grid for A/B testing
+        remove_old_date (float, optional): Unix timestamp (seconds since epoch) before which files should be removed. Defaults to 1/1/2025.
     """
     if len(fid_list) == 0 and fid_file is None:
         if verbose:
@@ -273,7 +292,7 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
         for fid in fid_list:
             process_single_fire(
                 fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate,
-                feds_direct_final_grid=feds_direct_final_grid
+                feds_direct_final_grid=feds_direct_final_grid, remove_old_date=remove_old_date
             )
             count += 1
             if count % 10 == 0 or count == len(fid_list):
@@ -287,7 +306,7 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
                     fid = line.strip()
                     process_single_fire(
                         fid, era5_vars, do_pyr, lf_vars, do_feds, verbose, plot, batch_plot, all_plot, del_sources, del_intermediate,
-                        feds_direct_final_grid=feds_direct_final_grid
+                        feds_direct_final_grid=feds_direct_final_grid, remove_old_date=remove_old_date
                     )
                     count += 1
                     if count % 20 == 0:
@@ -296,7 +315,7 @@ def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True
             if verbose:
                 print(f'Error when reading file {fid_file} - no processing will be done')
 
-def random_select_fids(n=5, size_threshold=None, min_size=1000, duration_threshold=None, method='random', skip_exist=True):
+def random_select_fids(n=5, size_threshold=None, min_size=1000, duration_threshold=None, year=None, method='random', skip_exist=True):
     """
     Select n fire event IDs from the entire list of fires based on a given size and duration threshold. Selection
     can be done either randomly (method='random') or by selecting the largest fires (method='size'). If the number
@@ -308,6 +327,7 @@ def random_select_fids(n=5, size_threshold=None, min_size=1000, duration_thresho
         size_threshold (int, optional): Upper bound of fire size in terms of burned area. Defaults to None.
         min_size (int, optional): Lower bound of fire size in terms of burned area. Defaults to 1000 acres.
         duration_threshold (int, optional): Upper bound of fire duration in days. Defaults to None.
+        year (int, optional): Year for which to select fires. Defaults to None.
         method (str, optional): Method by which FIDs should be selected (random, size). Defaults to 'random'.
         skip_exist (bool, optional): True if FIDs that already have downloaded data should be exempt from 
          selection; False otherwise. Defaults to True.
@@ -319,11 +339,14 @@ def random_select_fids(n=5, size_threshold=None, min_size=1000, duration_thresho
     Returns:
         list: List of FIDs that meet the given size/duration thresholds.
     """
-    existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
+    existing_fids = [] #[fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
     remote = []
-    with open(os.path.join('src', 'temp_existing_fids.txt'), 'r', encoding='utf-8') as f:
-        for line in f:
-            remote.append(line.strip())
+    try:
+        with open(os.path.join('src', f'temp_new_fids{"_" + str(year) if year is not None else ""}.txt'), 'r', encoding='utf-8') as f:
+            for line in f:
+                remote.append(line.strip())
+    except:
+        pass
     existing_fids = list(set(existing_fids).union(set(remote)))
 
     fires_df = firelist[(~firelist['Event_ID'].str.contains('HI', na=False))]
@@ -350,6 +373,10 @@ def random_select_fids(n=5, size_threshold=None, min_size=1000, duration_thresho
         else:
             raise ValueError('Duration threshold for filtering must be at least 1 day')
         
+    # Filter based on year if it is provided
+    if year is not None:
+        fires_df = fires_df[fires_df['Year'] == year]
+
     print(fires_df.shape[0], 'fires meet the given size/duration thresholds and do not already have downloaded data')
     # Select n FIDs if there are that many; otherwise, select all available FIDs
     num_to_select = min(n, fires_df.shape[0])
@@ -385,16 +412,16 @@ if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
     caldor_id = 'CA3858612053820210815'
-    temp_id = 'ID4619011508620120721'
+    temp_id = 'AZ3674211222820171103'
 
     # To skip ERA5 download, set era5_vars = []
-    era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
+    era5_vars = [] #['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     # To skip Pyregence download, set do_pyr = False
     get_pyr_data = True
     # To skip LANDFIRE download, set lf_vars = []
     lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40', 'ROADS']
     # To skip FEDS rasterization, set do_feds = False
-    rasterize_feds = True
+    rasterize_feds = False #True
     # To skip plotting, set plot_sources = []
     plot_sources = []
     existing_fids = get_all_existing_fids()
@@ -403,12 +430,14 @@ if __name__=='__main__':
     
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
-    do_sample_fids = True
+    do_sample_fids = False
     feds_direct_final_grid = True
-
+    cutoff_date = time.mktime((2026, 4, 1, 0, 0, 0, 0, 0, -1))
 
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=10, size_threshold=5000, min_size=1000, duration_threshold=150, method='random')
+        fids_to_use = random_select_fids(n=1, min_size=1000, size_threshold=2000000, duration_threshold=150, year=2018, method='random')
+        # fids_to_use = random_select_fids(n=1, min_size=1000, size_threshold=2000000, duration_threshold=150, year=2019, method='size')
+        # fids_to_use = random_select_fids(n=1, min_size=1000, size_threshold=2000000, duration_threshold=150, year=2020, method='size')
     else:
         fids_to_use = [temp_id] #existing_fids
     
@@ -416,5 +445,6 @@ if __name__=='__main__':
     process_multiple_fires(
         fid_list=fids_to_use, era5_vars=era5_vars, do_pyr=get_pyr_data, lf_vars=lf_vars, do_feds=rasterize_feds,
         verbose=True, plot=plot_sources, batch_plot=False, all_plot=False, del_sources=gen_util.data_sources,
-        del_intermediate=False, feds_direct_final_grid=feds_direct_final_grid
+        del_intermediate=False, feds_direct_final_grid=feds_direct_final_grid,
+        remove_old_date=cutoff_date
     )

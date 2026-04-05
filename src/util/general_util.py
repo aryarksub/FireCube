@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import rasterio
 from tqdm import tqdm
+import time
 
 ffmpeg_path = imgffm.get_ffmpeg_exe()
 mpl.rcParams['animation.ffmpeg_path'] = ffmpeg_path
@@ -523,6 +524,24 @@ def remove_temp_dir_files(fid, del_dir_types=[], del_data_sources=[], del_var_ty
                     file_path = os.path.join(dir_path, fname)
                     if os.path.isfile(file_path):
                         os.remove(os.path.join(dir_path, fname))
+
+def remove_old_files(directory, cutoff_timestamp=time.mktime((2026, 4, 1, 0, 0, 0, 0, 0, -1))):
+    """
+    Remove files in 'directory' created before 'cutoff_timestamp'.
+    """
+    for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
+
+        if os.path.isfile(file_path):
+            try:
+                # Get creation time
+                creation_time = os.path.getmtime(file_path)
+                # print(f"Checking file: {file_path}, creation_time: {datetime.fromtimestamp(creation_time)}, cutoff_time: {datetime.fromtimestamp(cutoff_timestamp)}")
+
+                if creation_time < cutoff_timestamp:
+                    os.remove(file_path)
+            except Exception as e:
+                print(f"Error processing {file_path}: {e}")
 
 def add_to_new_fires_list(new_fid, suffix='1'):
     """

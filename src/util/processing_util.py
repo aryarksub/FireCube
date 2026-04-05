@@ -354,7 +354,9 @@ def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
     # Basic assertions
     assert len(in_tifs) == len(out_tifs) and len(bounds) == 4
 
-    final_bounds = pad_bounds_to_resolution_multiple(bounds, get_coarsest_resolution(in_tifs))
+    # NOTE: Previously, was using coarsest resolution across input TIFs (get_coarsest_resolution(in_tifs)) 
+    # ... now just using default of 9000 (ERA5 res)
+    final_bounds = pad_bounds_to_resolution_multiple(bounds, 9000)
 
     for (in_tif, out_tif) in zip(in_tifs, out_tifs):
         crop_tif_based_on_area(in_tif, out_tif, final_bounds)
@@ -455,6 +457,8 @@ def convert_null_values_to_nan(in_tif, out_tif=None, null_values=[GLOBAL_NULL_VA
     with rasterio.open(in_tif) as src:
         data = src.read()  # Read as (bands, rows, cols)
         meta = src.meta.copy()
+
+        # print(in_tif, data.shape)
 
         # Include raster's built-in nodata value if present
         if src.nodata is not None:

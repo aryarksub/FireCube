@@ -229,7 +229,7 @@ def driver_landfire(fid, var_names, bounds, fire_start, plot_types=[]):
 
     download_success = download_landfire_data(
         bounds=bounds, out_file=lf_zip_path,
-        layers=layers, out_proj="102003", resample_res=30, redo=False
+        layers=layers, out_proj="102003", resample_res=30, redo=True
     )
     if not download_success:
         raise RuntimeError('LANDFIRE data download failed')

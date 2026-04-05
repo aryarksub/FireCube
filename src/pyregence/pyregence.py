@@ -169,7 +169,7 @@ def driver_pyregence(fid, fire_center, fire_start, fire_hours, plot_types=[]):
     out_dir = os.path.dirname(full_out_path)
     
     # Use 90 km buffer
-    download_pyregence_data(out_dir, out_filename, fire_center, (90,90,90,90), fire_start, fire_hours, redo=False)
+    download_pyregence_data(out_dir, out_filename, fire_center, (90,90,90,90), fire_start, fire_hours, redo=True)
     extract_tif_from_pyr_tar(fid, full_out_path)
     data_vars = gen_util.get_tif_vars_in_dir(
         os.path.join(gen_util.dir_temp, gen_util.dir_data, fid, gen_util.subdir_pyr, gen_util.subdir_type_original)
