@@ -15,22 +15,22 @@ plt.switch_backend('agg')
 from util.processing_util import pad_bounds_to_resolution_multiple
 import util.general_util as gen_util
 
-def determine_band_range(fperim_tif):
+def determine_band_range(farea_tif):
     """
-    Determine the first and last time bands containing fire perimeters. Since there are 1-day buffers
+    Determine the first and last time bands containing fire areas. Since there are 1-day buffers
     when computing bounding boxes and bands are hourly time-steps, the first and last 24 bands should
     not be counted towards the first/last time bands.
 
     Args:
-        fperim_tif (str): Path to the fire perimeter TIF file.
+        farea_tif (str): Path to the fire area TIF file.
 
     Returns:
-        tuple: A tuple containing the first and last time bands with fire perimeters.
+        tuple: A tuple containing the first and last time bands with fire areas.
     """
-    # Minimum time band = first band where there is a fire perimeter
-    # Maximum time band = last band where there is a fire perimeter
+    # Minimum time band = first band where there is a fire area
+    # Maximum time band = last band where there is a fire area
     # Note: there are 1-day buffers when computing bounding boxes (min band > 24, max band <= src.count-24)
-    with rasterio.open(fperim_tif) as src:
+    with rasterio.open(farea_tif) as src:
         min_band = src.count
         max_band = 0
         for band in range(25, src.count - 24 + 1):
@@ -41,14 +41,14 @@ def determine_band_range(fperim_tif):
 
     return min_band, max_band
 
-def get_bounding_box_per_timestep(fperim_tif, coarsest_res=9000):
+def get_bounding_box_per_timestep(farea_tif, coarsest_res=9000):
     """
-    Compute spatial bounding boxes for each timestep with fire perimeters. The bounding boxes
+    Compute spatial bounding boxes for each timestep with fire areas. The bounding boxes
     are padded so that the height and width are both multiples of the given coarsest resolution.
     The bounding boxes are stored as tuples of the form (minx, miny, maxx, maxy). 
 
     Args:
-        fperim_tif (str): Path to the fire perimeter TIF file.
+        farea_tif (str): Path to the fire area TIF file.
         coarsest_res (int, optional): The coarsest resolution (in meters) to which bounding boxes 
         should be padded. Defaults to 9000.
 
@@ -56,10 +56,10 @@ def get_bounding_box_per_timestep(fperim_tif, coarsest_res=9000):
         dict: Dictionary mapping each time band to its corresponding bounding box tuple (minx, miny, maxx, maxy).
     """
     bboxes = dict()
-    # Determine first/last time bands with fire perimeters
-    min_band, max_band = determine_band_range(fperim_tif)
+    # Determine first/last time bands with fire areas
+    min_band, max_band = determine_band_range(farea_tif)
     
-    with rasterio.open(fperim_tif) as src:
+    with rasterio.open(farea_tif) as src:
         transform = src.transform
 
         for band in range(min_band, max_band + 1):
@@ -163,11 +163,11 @@ def driver(fids=[], plot=False, redo=False):
     fids = fids if len(fids) > 0 else gen_util.get_all_output_fids()
 
     for fid_index, fid in enumerate(fids, start=1):
-        fperim_tif = os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, gen_util.subdir_firespread, 'fperim.tif')
+        farea_tif = os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, gen_util.subdir_firespread, 'farea.tif')
 
-        # Get bounding boxes per time band based on fire perimeter
-        bboxes = get_bounding_box_per_timestep(fperim_tif)
-        band_range = determine_band_range(fperim_tif)
+        # Get bounding boxes per time band based on fire area
+        bboxes = get_bounding_box_per_timestep(farea_tif)
+        band_range = determine_band_range(farea_tif)
         shifted_bboxes = {i : bboxes[i + band_range[0] - 1] for i in range(1, len(bboxes) + 1)}
 
         for batch in gen_util.data_batches:

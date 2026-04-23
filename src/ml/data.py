@@ -14,7 +14,7 @@ import rasterio
 
 DEFAULT_REQUIRED_VARS = [
     "fire_spread/fline",
-    "fire_spread/fperim",
+    "fire_spread/farea",
     "fire_spread/nfp",
     "fire_spread/burned_state",
     "fire_spread/frp",
@@ -41,7 +41,7 @@ DEFAULT_REQUIRED_VARS = [
 
 NON_CONTINUOUS_VARS = {
     "fire_spread/fline",
-    "fire_spread/fperim",
+    "fire_spread/farea",
     "fire_spread/nfp",
     # "landfire/evt",
     # "landfire/fbfm13",
@@ -255,7 +255,7 @@ class GeoTiffDatasetStructured(Dataset):
         vars_all = batch["variables"]
 
         required = [
-            "fire_spread/fperim",
+            "fire_spread/farea",
             "fire_spread/fline",
             "fire_spread/nfp",
         ]
@@ -263,20 +263,20 @@ class GeoTiffDatasetStructured(Dataset):
         if not all(k in vars_all for k in required):
             return  # Cannot build burned state
 
-        fperim = vars_all["fire_spread/fperim"]["data"]
+        farea = vars_all["fire_spread/farea"]["data"]
         fline  = vars_all["fire_spread/fline"]["data"]
         nfp    = vars_all["fire_spread/nfp"]["data"]
 
-        T, H, W = fperim.shape
+        T, H, W = farea.shape
         burned = torch.zeros((T, H, W), dtype=torch.float32)
 
         for t in range(T):
-            perim = fperim[t]
+            area = farea[t]
             line  = fline[t]
             new   = nfp[t]
 
             active = (line > 0) | (new > 0)
-            inside = (perim > 0)
+            inside = (area > 0)
 
             burned[t][active] = 1
             burned[t][inside & ~active] = 2
@@ -443,9 +443,9 @@ class OneStepDatasetSimple(Dataset):
 
     def _target_timesteps_for_event(self, event_path: str) -> int:
         category, var = self.target_var.split("/", 1)
-        # Use fperim to determine timesteps since there is no file for burned_state (it is derived on the fly)
+        # Use farea to determine timesteps since there is no file for burned_state (it is derived on the fly)
         if var == "burned_state":
-            var = "fperim" 
+            var = "farea" 
         category_path = os.path.join(event_path, category)
         if not os.path.isdir(category_path):
             return 0

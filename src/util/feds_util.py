@@ -121,10 +121,11 @@ def read_1fire(Event_ID):
     Returns:
         tuple: Tuple of three GeoDataFrames (one each for fire perimeter, fire line, new fire pixels).
     """
-    gdf_fperim_rd = read_gdf_fire(Event_ID, layer='perimeter')
+    # Layer name is perimeter, but we are actually interested in the stored area data
+    gdf_farea_rd = read_gdf_fire(Event_ID, layer='perimeter')
     gdf_fline_rd = read_gdf_fire(Event_ID, layer='fireline')
     gdf_nfp_rd = read_gdf_fire(Event_ID, layer='newfirepix')
-    return gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd
+    return gdf_farea_rd, gdf_fline_rd, gdf_nfp_rd
 
 def get_gdf_times_and_time_range(gdf, conv_delta=None, start_time=None, end_time=None, num_hours=None, save_csv=None):
     """
@@ -327,17 +328,17 @@ def driver_feds(
          (A/B test mode); False for legacy rasterize+resample+pad flow. Defaults to False.
 
     Raises:
-        ValueError: Occurs when fire perimeter or new fire pixel data is empty.
+        ValueError: Occurs when fire area or new fire pixel data is empty.
     """
-    gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = read_1fire(fid)
+    gdf_farea_rd, gdf_fline_rd, gdf_nfp_rd = read_1fire(fid)
     gdfs = {
-        "fperim" : gdf_fperim_rd,   # fire perimeter
+        "farea" : gdf_farea_rd,   # fire area
         "fline" : gdf_fline_rd,     # active fire line
         "nfp" : gdf_nfp_rd          # new fire pixels
     }
 
     times, trange = get_gdf_times_and_time_range(
-        gdf_fperim_rd, conv_delta=conv_delta, 
+        gdf_farea_rd, conv_delta=conv_delta, 
         start_time=fire_start, end_time=fire_end, num_hours=num_hours,
         save_csv=os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, f'fire_times.csv')
     )
@@ -345,7 +346,7 @@ def driver_feds(
         final_transform, final_width, final_height = get_canonical_grid_from_bounds(final_bounds, res)
 
     for var in gdfs:
-        # For each "variable" (fperim, fline, nfp), get the temporary data/video file names
+        # For each "variable" (farea, fline, nfp), get the temporary data/video file names
         var_tif = gen_util.get_temp_data_video_filename(
             fid, var, dir_type=gen_util.dir_data, data_source=gen_util.subdir_feds, var_type=gen_util.subdir_type_resample
         )
@@ -354,7 +355,7 @@ def driver_feds(
         )
 
         # Some fires do not have fire line data (because they are too small or satellite observations are sporadic), so
-        # just skip them. However, if fires do not have fire perimeter or new fire pixel data, this is a problem, so
+        # just skip them. However, if fires do not have fire area or new fire pixel data, this is a problem, so
         # raise an error.
         if gdfs[var].empty:
             if var == 'fline':
@@ -440,7 +441,7 @@ def get_gdf_firepix_t(df_fp, t, out_crs="epsg:4326"):
     return gdf_fp_t
 
 def rasterize_frp_and_save_as_tif(
-    gdf_fperim_rd, df_fp, out_tif, resolution, crs='EPSG:5070', start_time=None, end_time=None, num_hours=None,
+    gdf_farea_rd, df_fp, out_tif, resolution, crs='EPSG:5070', start_time=None, end_time=None, num_hours=None,
     use_prev=False, conv_delta=None, out_transform=None, out_width=None, out_height=None
 ):
     """
@@ -448,7 +449,7 @@ def rasterize_frp_and_save_as_tif(
     may include projection to a new CRS (coordinate reference system) and/or resolution.
 
     Args:
-        gdf_fperim_rd (GeoDataFrame): GeoDataFrame with geometries of fire perimeter data.
+        gdf_farea_rd (GeoDataFrame): GeoDataFrame with geometries of fire area data.
         df_fp (DataFrame): DataFrame with fire pixel data corresponding to a single fire.
         out_tif (str): Name of the output TIF file to where rasterized data should be stored.
         resolution (float): Output resolution in which the rasterized data should be stored.
@@ -460,32 +461,32 @@ def rasterize_frp_and_save_as_tif(
         use_prev (bool, optional): Whether to use previous non-null data for rasterization if no data exists. Defaults to False.
         conv_delta (pandas.Timedelta, optional): Time delta to apply to FEDS data times for conversion from LST to UTC. Defaults to None.
         out_transform (Affine, optional): Optional target transform for direct writing to a canonical grid.
-         If omitted, bounds are derived from perimeter geometry and legacy behavior is used.
+         If omitted, bounds are derived from area geometry and legacy behavior is used.
         out_width (int, optional): Optional target width for direct writing to a canonical grid.
         out_height (int, optional): Optional target height for direct writing to a canonical grid.
     """
-    # Convert gdf_fperim_rd (GeoDataFrame) to correct CRS and get width, height based on desired resolution
-    gdf_fperim_rd = gdf_fperim_rd.to_crs(crs)
+    # Convert gdf_farea_rd (GeoDataFrame) to correct CRS and get width, height based on desired resolution
+    gdf_farea_rd = gdf_farea_rd.to_crs(crs)
     direct_write = out_transform is not None and out_width is not None and out_height is not None
     if direct_write:
         transform = out_transform
         width = int(out_width)
         height = int(out_height)
     else:
-        minx, miny, maxx, maxy = gdf_fperim_rd.total_bounds
+        minx, miny, maxx, maxy = gdf_farea_rd.total_bounds
         width = max(1, int((maxx - minx) / resolution))
         height = max(1, int((maxy - miny) / resolution))
         transform = from_bounds(minx, miny, maxx, maxy, width, height)
 
-    start_time = gdf_fperim_rd['t'].min() if start_time is None else start_time
+    start_time = gdf_farea_rd['t'].min() if start_time is None else start_time
     # If num_hours is given, use that to generate times; otherwise, calculate num_hours based on end_time
     if num_hours is None or num_hours == 0:
-        end_time = gdf_fperim_rd['t'].max() if end_time is None else end_time
+        end_time = gdf_farea_rd['t'].max() if end_time is None else end_time
         num_hours = int( (end_time - start_time).total_seconds() / 3600)
-    gdf_times = { t + conv_delta if conv_delta is not None else t for t in gdf_fperim_rd.loc[gdf_fperim_rd.geometry.notnull(), 't'].unique() }
+    gdf_times = { t + conv_delta if conv_delta is not None else t for t in gdf_farea_rd.loc[gdf_farea_rd.geometry.notnull(), 't'].unique() }
     time_range = [start_time + timedelta(hours=i) for i in range(num_hours+1)]
 
-    # Add conv_delta to the times in df_fp for consistency with gdf_fperim_rd times if conv_delta is given
+    # Add conv_delta to the times in df_fp for consistency with gdf_farea_rd times if conv_delta is given
     df_fp_local = df_fp.copy()
     df_fp_local['t'] = df_fp_local['t'] + conv_delta if conv_delta is not None else df_fp_local['t']
 
@@ -584,13 +585,13 @@ def driver_frp(
         direct_to_final_grid (bool, optional): True to rasterize directly to a canonical final grid
          (A/B test mode); False for legacy rasterize+resample+pad flow. Defaults to False.
     """
-    # Read FEDS2.5 MTBS fire perimeter data for the given fire
-    gdf_fperim_rd, _, _ = read_1fire(fid) 
-    if gdf_fperim_rd is None or gdf_fperim_rd.empty:
-        print(f"No fire perimeter data for {fid}, cannot process FRP.")
+    # Read FEDS2.5 MTBS fire area data for the given fire
+    gdf_farea_rd, _, _ = read_1fire(fid) 
+    if gdf_farea_rd is None or gdf_farea_rd.empty:
+        print(f"No fire area data for {fid}, cannot process FRP.")
         return
     # Read FEDS2.5 MTBS fire pixel data for the given specific fire (data at all time steps)
-    df_fp = read_firepix_1fire(gdf_fperim_rd.t.min().year, fid) 
+    df_fp = read_firepix_1fire(gdf_farea_rd.t.min().year, fid) 
     var = 'frp'
 
     # Get the name for the temporary FRP data file
@@ -603,7 +604,7 @@ def driver_frp(
     if direct_to_final_grid:
         final_transform, final_width, final_height = get_canonical_grid_from_bounds(final_bounds, res)
         rasterize_frp_and_save_as_tif(
-            gdf_fperim_rd,
+            gdf_farea_rd,
             df_fp,
             out_tif=var_tif,
             resolution=res,
@@ -620,7 +621,7 @@ def driver_frp(
     else:
         # Save rasterized data to the temporary TIF file
         rasterize_frp_and_save_as_tif(
-            gdf_fperim_rd, df_fp, out_tif=var_tif, resolution=res, start_time=fire_start, end_time=fire_end,
+            gdf_farea_rd, df_fp, out_tif=var_tif, resolution=res, start_time=fire_start, end_time=fire_end,
             num_hours=num_hours, use_prev=use_prev, conv_delta=conv_delta
         )
 

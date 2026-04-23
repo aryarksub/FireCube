@@ -48,26 +48,26 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     if verbose:
         print(f'Processing fire {fid}')
     
-    # Only process a fire if it has FEDS data, specifically for fire perimeter
-    gdf_fperim_rd, gdf_fline_rd, gdf_nfp_rd = feds_util.read_1fire(fid)
-    if gdf_fperim_rd is None:
+    # Only process a fire if it has FEDS data, specifically for fire area
+    gdf_farea_rd, gdf_fline_rd, gdf_nfp_rd = feds_util.read_1fire(fid)
+    if gdf_farea_rd is None:
         if verbose:
             print(f'FEDS file for fire {fid} does not exist - no processing will be done')
         return
     
     gen_util.create_dirs_for_fire(fid)
     # West/South/East/North bounds for the fire
-    bnds = proc_util.bufferbnds(gdf_fperim_rd.total_bounds, res=0.005, bufgd=1)
-    df_t = pd.to_datetime(gdf_fperim_rd.t)
+    bnds = proc_util.bufferbnds(gdf_farea_rd.total_bounds, res=0.005, bufgd=1)
+    df_t = pd.to_datetime(gdf_farea_rd.t)
     # Add time-buffer to DataFrame
     df_t_with_buffer = proc_util.add_time_buffers(df_t)
 
     # print('Original fire start/end', df_t.min(), df_t.max())
     # print('Buffered fire start/end', df_t_with_buffer.min(), df_t_with_buffer.max())
 
-    # Convert gdf_perim to EPSG:5070
-    gdf_fperim_5070 = gdf_fperim_rd.to_crs('EPSG:5070') 
-    bounds_5070 = gdf_fperim_5070.total_bounds
+    # Convert gdf_farea to EPSG:5070
+    gdf_farea_5070 = gdf_farea_rd.to_crs('EPSG:5070') 
+    bounds_5070 = gdf_farea_5070.total_bounds
 
     # Get fire center
     fire_row = firelist[firelist['Event_ID'] == fid]
@@ -249,7 +249,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         data_dir = os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, subdir)
         gen_util.remove_old_files(data_dir, cutoff_timestamp=remove_old_date)
 
-    gen_util.add_to_new_fires_list(fid, '5')
+    # gen_util.add_to_new_fires_list(fid, '2018UTVA')
 
 def process_multiple_fires(fid_list=[], fid_file=None, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True, verbose=False, 
                            plot=[], batch_plot=False, all_plot=False, del_sources=gen_util.data_sources, del_intermediate=False, 
@@ -339,7 +339,7 @@ def random_select_fids(n=5, size_threshold=None, min_size=1000, duration_thresho
     Returns:
         list: List of FIDs that meet the given size/duration thresholds.
     """
-    existing_fids = [] #[fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
+    existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
     remote = []
     try:
         with open(os.path.join('src', f'temp_new_fids{"_" + str(year) if year is not None else ""}.txt'), 'r', encoding='utf-8') as f:
@@ -408,20 +408,25 @@ def get_all_existing_fids():
     existing_fids = [fid for fid in os.listdir(os.path.join(gen_util.dir_output, gen_util.dir_cubes))]
     return existing_fids
 
+def get_fids_from_file(file_path):
+    with open(file_path, 'r') as f:
+        fids = [line.strip() for line in f if line.strip()]
+    return fids
+
 if __name__=='__main__':
     creek_id = 'CA3720111927220200905'
     zogg_id = 'CA4054112256820200927'
     caldor_id = 'CA3858612053820210815'
-    temp_id = 'AZ3674211222820171103'
+    temp_id = 'CA3338011743020180706'
 
     # To skip ERA5 download, set era5_vars = []
-    era5_vars = [] #['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
+    era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
     # To skip Pyregence download, set do_pyr = False
     get_pyr_data = True
     # To skip LANDFIRE download, set lf_vars = []
     lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40', 'ROADS']
     # To skip FEDS rasterization, set do_feds = False
-    rasterize_feds = False #True
+    rasterize_feds = True
     # To skip plotting, set plot_sources = []
     plot_sources = []
     existing_fids = get_all_existing_fids()
@@ -430,14 +435,12 @@ if __name__=='__main__':
     
     # True : FIDs should be randomly selected
     # False: Use hard-coded FID(s)
-    do_sample_fids = False
+    do_sample_fids = True
     feds_direct_final_grid = True
     cutoff_date = time.mktime((2026, 4, 1, 0, 0, 0, 0, 0, -1))
 
     if do_sample_fids:
-        fids_to_use = random_select_fids(n=1, min_size=1000, size_threshold=2000000, duration_threshold=150, year=2018, method='random')
-        # fids_to_use = random_select_fids(n=1, min_size=1000, size_threshold=2000000, duration_threshold=150, year=2019, method='size')
-        # fids_to_use = random_select_fids(n=1, min_size=1000, size_threshold=2000000, duration_threshold=150, year=2020, method='size')
+        fids_to_use = random_select_fids(n=1, min_size=1000, size_threshold=2000000, duration_threshold=150, method='random')
     else:
         fids_to_use = [temp_id] #existing_fids
     
