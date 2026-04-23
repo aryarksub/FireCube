@@ -8,7 +8,7 @@ data:
   pin_memory: true
   persistent_workers: true
   prefetch_factor: 2
-  target_var: fire_spread/fperim
+  target_var: fire_spread/farea
   step_hours: 12
   horizon_hours: 12
   hourly_agg: concat
@@ -18,7 +18,7 @@ data:
   stats_sample_limit: null
   required_vars:
     - fire_spread/fline
-    - fire_spread/fperim
+    - fire_spread/farea
     - fire_spread/nfp
     - frp/frp
     - fuel_topo/adj

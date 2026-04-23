@@ -137,7 +137,7 @@ def validate_one_fire_data(fid, layer_data_dict=None):
     missing_layers = []
     invalid_layers_band_count = []
 
-    fperim_tif = os.path.join(fire_folder, 'fire_spread', 'fperim.tif')
+    farea_tif = os.path.join(fire_folder, 'fire_spread', 'farea.tif')
     
     for layer, layer_data in layer_data_dict.items():
         # Since there are multiple potential EVT layers (LANDFIRE), if we have already found data for one, skip the others
@@ -191,9 +191,9 @@ def validate_one_fire_data(fid, layer_data_dict=None):
         if 'evt' in layer:
             evt_found = True
 
-        is_valid, fperim_band_count, layer_band_count = check_band_count(fperim_tif, layer_tif)
+        is_valid, farea_band_count, layer_band_count = check_band_count(farea_tif, layer_tif)
         if not is_valid:
-            invalid_layers_band_count.append((layer, fperim_band_count, layer_band_count))
+            invalid_layers_band_count.append((layer, farea_band_count, layer_band_count))
         
         # Data validation for each band in TIF
         with rasterio.open(layer_tif) as src:
