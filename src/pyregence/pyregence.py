@@ -42,18 +42,20 @@ def get_landfire_version(start_time):
     Returns:
         str: LANDFIRE version for the given start time/year.
     """
-    # Landfire versioning based on this naming guide: https://www.landfire.gov/LFNameConvention
+    # Landfire version naming based on the available versions listed in https://github.com/lautenberger/elmfire/blob/main/cloudfire/fuel_wx_ign.py
     cutoffs = [
         (datetime(2024, 10, 1),  '2.5.0'),
         (datetime(2023, 10, 1),  '2.4.0'),
         (datetime(2022, 12, 31), '2.3.0'),
         (datetime(2020, 12, 31), '2.2.0'),
-        #(datetime(2016, 12, 31), '2.0.0'), #NOTE: Pyregence 2.0.0 doesn't seem to work, so we default to 1.4.0
+        (datetime(2016, 12, 31), '2.0.0_2019'),
+        (datetime(2014, 12, 31), '1.4.0'),
+        (datetime(2012, 12, 31), '1.3.0')
     ]
     for cutoff_date, version in cutoffs:
         if start_time > cutoff_date:
             return version
-    return '1.4.0'
+    return '1.0.5'
 
 def download_pyregence_data(
         out_dir, out_file, center, buffer=(60,60,60,60), wx_start_time=None, wx_num_hours=24, redo=False
@@ -202,7 +204,7 @@ def driver_pyregence(fid, fire_center, fire_start, fire_hours, plot_types=[]):
         with rasterio.open(pyr_var_fnames[1]) as src:
             original_res = src.transform.a
             new_res = 30 if abs(original_res - 30) <= abs(original_res - 600) else 600
-        proc_util.resample_tif(pyr_var_fnames[1], pyr_var_fnames[2], target_res=new_res)
+        proc_util.resample_tif(pyr_var_fnames[1], pyr_var_fnames[2], target_res=new_res, catype=(var == 'wd'))
 
         # Plot the specified types of data (original/converted/resampled)
         for plot_type in set(plot_types):
