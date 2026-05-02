@@ -48,7 +48,7 @@ def get_landfire_version(start_time):
         (datetime(2023, 10, 1),  '2.4.0'),
         (datetime(2022, 12, 31), '2.3.0'),
         (datetime(2020, 12, 31), '2.2.0'),
-        (datetime(2016, 12, 31), '2.0.0_2019'),
+        (datetime(2016, 12, 31), '2.0.0_2020'),
         (datetime(2014, 12, 31), '1.4.0'),
         (datetime(2012, 12, 31), '1.3.0')
     ]
