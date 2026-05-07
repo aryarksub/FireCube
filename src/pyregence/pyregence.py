@@ -11,7 +11,7 @@ import util.general_util as gen_util
 import util.processing_util as proc_util
 
 VARS_TO_IGNORE = {
-    'asp', 'fbfm40', 'slp', 'ignition_mask', 'phi', 'dem'
+    'adj', 'asp', 'fbfm40', 'slp', 'ignition_mask', 'phi', 'dem'
 }
   
 def get_cloudfire_channel():
