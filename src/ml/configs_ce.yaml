@@ -20,12 +20,11 @@ data:
     - fire_spread/fline
     - fire_spread/farea
     - fire_spread/nfp
-    - frp/frp
-    - fuel_topo/adj
-    - fuel_topo/cbd
-    - fuel_topo/cbh
-    - fuel_topo/cc
-    - fuel_topo/ch
+    - fire_spread/frp
+    - fuel_structure/cbd
+    - fuel_structure/cbh
+    - fuel_structure/cc
+    - fuel_structure/ch
     - high_res_climate/lh
     - high_res_climate/lw
     - high_res_climate/m1
@@ -33,13 +32,13 @@ data:
     - high_res_climate/m100
     - high_res_climate/wd
     - high_res_climate/ws
-    - landfire/evt
-    - landfire/fbfm13
-    - landfire/fbfm40
-    - landfire/roads
-    - landfire/asp
-    - landfire/elev
-    - landfire/slpd
+    - veg_fm_topo/evt
+    - veg_fm_topo/fbfm13
+    - veg_fm_topo/fbfm40
+    - veg_fm_topo/roads
+    - veg_fm_topo/asp
+    - veg_fm_topo/elev
+    - veg_fm_topo/slpd
 
 model:
   patch: 2

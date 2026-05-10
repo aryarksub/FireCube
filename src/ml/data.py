@@ -18,11 +18,10 @@ DEFAULT_REQUIRED_VARS = [
     "fire_spread/nfp",
     "fire_spread/burned_state",
     "fire_spread/frp",
-    "fuel_topo/adj",
-    "fuel_topo/cbd",
-    "fuel_topo/cbh",
-    "fuel_topo/cc",
-    "fuel_topo/ch",
+    "fuel_structure/cbd",
+    "fuel_structure/cbh",
+    "fuel_structure/cc",
+    "fuel_structure/ch",
     "high_res_climate/lh",
     "high_res_climate/lw",
     "high_res_climate/m1",
@@ -30,23 +29,23 @@ DEFAULT_REQUIRED_VARS = [
     "high_res_climate/m100",
     "high_res_climate/wd",
     "high_res_climate/ws",
-    "landfire/evt",
-    "landfire/fbfm13",
-    "landfire/fbfm40",
-    "landfire/roads",
-    "landfire/asp",
-    "landfire/elev",
-    "landfire/slpd",
+    "veg_fm_topo/evt",
+    "veg_fm_topo/fbfm13",
+    "veg_fm_topo/fbfm40",
+    "veg_fm_topo/roads",
+    "veg_fm_topo/asp",
+    "veg_fm_topo/elev",
+    "veg_fm_topo/slpd",
 ]
 
 NON_CONTINUOUS_VARS = {
     "fire_spread/fline",
     "fire_spread/farea",
     "fire_spread/nfp",
-    # "landfire/evt",
-    # "landfire/fbfm13",
-    # "landfire/fbfm40",
-    # "landfire/roads",
+    # "veg_fm_topo/evt",
+    # "veg_fm_topo/fbfm13",
+    # "veg_fm_topo/fbfm40",
+    # "veg_fm_topo/roads",
 }
 
 
@@ -389,7 +388,7 @@ class OneStepDatasetSimple(Dataset):
 
         self.fire_vars = [v for v in required_vars if v.split("/")[0] in ("fire_spread",)]
         self.hourly_vars = [v for v in required_vars if v.split("/")[0] in ("high_res_climate", "low_res_climate")]
-        self.static_vars = [v for v in required_vars if v.split("/")[0] in ("fuel_topo", "landfire")]
+        self.static_vars = [v for v in required_vars if v.split("/")[0] in ("fuel_structure", "veg_fm_topo")]
         self.sample_index = self._build_sample_index()
 
     def _hourly_mode(self) -> str:

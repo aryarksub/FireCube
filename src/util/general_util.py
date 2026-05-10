@@ -34,15 +34,15 @@ dir_crop_cubes = 'cropped_cubes' # cropped cube outputs
 subdir_vis = 'vis' # visualizations
 subdir_lrc = 'low_res_climate' # era5 9000m
 subdir_hrc = 'high_res_climate' # pyregence 600m
-subdir_fuel_topo = 'fuel_topo' # pyregence 30m
-subdir_landfire = 'landfire' # landfire 30m
+subdir_fuel_structure = 'fuel_structure' # pyregence 30m
+subdir_vfmt = 'veg_fm_topo' # landfire 30m
 subdir_firespread = 'fire_spread' # FEDS rasters 300m
 
 dir_types = [dir_data, dir_videos]
 data_sources = [subdir_era5, subdir_pyr, subdir_lf, subdir_feds]#, subdir_frp]
 var_types = [subdir_type_original, subdir_type_converted, subdir_type_resample]
 
-data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_topo, subdir_landfire, subdir_firespread]#, subdir_frp]
+data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_structure, subdir_vfmt, subdir_firespread]#, subdir_frp]
 
 NEW_FIRES_FILE = os.path.join('src', 'temp_new_fids.txt')
 
@@ -174,12 +174,12 @@ def get_out_batch_for_tif(tif):
     # Pyregence variables that have resolution 600m are under the "high-resolution climate" batch
     elif res_x == 600 and subdir_pyr in tif:
         return subdir_hrc
-    # Pyregence variables that have resolution 30m are under the "fuel and topography" batch
+    # Pyregence variables that have resolution 30m are under the "fuel structure" batch
     elif res_x == 30 and subdir_pyr in tif:
-        return subdir_fuel_topo
-    # LANDFIRE variables have their own batch ("landfire")
+        return subdir_fuel_structure
+    # LANDFIRE variables have their own batch ("vfmt" -> vegetation, fuel model, topography)
     elif subdir_lf in tif:
-        return subdir_landfire
+        return subdir_vfmt
     # FEDS/FRP variables have their own batch ("fire spread")
     elif subdir_feds in tif:
         return subdir_firespread

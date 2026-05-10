@@ -245,7 +245,7 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
         verbose=verbose
     )
 
-    for subdir in [gen_util.subdir_hrc, gen_util.subdir_fuel_topo, gen_util.subdir_landfire]:
+    for subdir in [gen_util.subdir_hrc, gen_util.subdir_fuel_structure, gen_util.subdir_vfmt]:
         data_dir = os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, subdir)
         gen_util.remove_old_files(data_dir, cutoff_timestamp=remove_old_date)
 

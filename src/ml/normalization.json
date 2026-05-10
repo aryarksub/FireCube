@@ -1,45 +1,45 @@
 {
-  "frp/frp": {
+  "fire_spread/frp": {
     "min": 0.0,
     "max": 0.5603628158569336
   },
-  "landfire/fbfm13": {
+  "veg_fm_topo/fbfm13": {
     "min": 1.0,
     "max": 99.0
   },
-  "landfire/fbfm40": {
+  "veg_fm_topo/fbfm40": {
     "min": 91.0,
     "max": 203.0
   },
-  "landfire/asp": {
+  "veg_fm_topo/asp": {
     "min": -1.0,
     "max": 359.0
   },
-  "landfire/elev": {
+  "veg_fm_topo/elev": {
     "min": 0.0,
     "max": 3640.0
   },
-  "landfire/slpd": {
+  "veg_fm_topo/slpd": {
     "min": 0.0,
     "max": 76.0
   },
-  "fuel_topo/adj": {
+  "fuel_structure/adj": {
     "min": 1.0,
     "max": 1.0
   },
-  "fuel_topo/cbd": {
+  "fuel_structure/cbd": {
     "min": 0.0,
     "max": 45.0
   },
-  "fuel_topo/cbh": {
+  "fuel_structure/cbh": {
     "min": 0.0,
     "max": 100.0
   },
-  "fuel_topo/cc": {
+  "fuel_structure/cc": {
     "min": 0.0,
     "max": 95.0
   },
-  "fuel_topo/ch": {
+  "fuel_structure/ch": {
     "min": 0.0,
     "max": 430.0
   },
@@ -71,7 +71,7 @@
     "min": 0.0,
     "max": 44.061767578125
   },
-  "landfire/roads": {
+  "veg_fm_topo/roads": {
     "min": 0.0,
     "max": 23.0
   }
