@@ -36,7 +36,7 @@ for i in "${!VARS[@]}"; do
     echo "Processing LF version: ${LF_VERSION} | Variable: ${LF_VAR}"
     echo "--------------------------------------------------------"
     
-    python -u build_tifs.py --landfire-path $LF_PATH \
+    python -u extract_tifs.py --landfire-path $LF_PATH \
                             --landfire-version $VERSION \
                             --landfire-var $LF_VAR \
                             --input $CSV_PATH \

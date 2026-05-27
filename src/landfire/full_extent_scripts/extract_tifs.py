@@ -1,7 +1,3 @@
-'''
-build_tifs.py
-'''
-
 import os
 import argparse
 import zipfile
