@@ -3,6 +3,10 @@ temp/
 notes.txt
 src/temp*
 src/*/temp*
+src/output_folder
+
+# Final output folder for Zenodo
+pyrostack/
 
 # Notebooks, slurm files, checkpoints for ML model
 # *.ipynb
