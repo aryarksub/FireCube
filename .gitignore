@@ -19,6 +19,9 @@ output/
 
 # Make large FEDS input data private (GitHub space constraints)
 inputData/Full_FEDS
+inputData/firepix
+inputData/fireslist2012-2024_withtype.csv
+inputData/full_fireslist2012-2024.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
