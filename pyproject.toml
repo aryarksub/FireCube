@@ -1,0 +1,46 @@
+[project]
+name = "pyrostack"
+version = "0.1.0"
+description = "Code used to generate the PyroStack wildfire trajectory dataset"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "cdsapi==0.7.6",
+    "geopandas==1.0.1",
+    "grpcio==1.71.0",
+    "matplotlib==3.9.4",
+    "numpy==1.24.0",
+    "pandas==2.3.0",
+    "protobuf==6.31.1",
+    "psutil==7.0.0",
+    "rasterio==1.4.3",
+    "Requests==2.32.4",
+    "tqdm==4.66.2",
+    "xarray==2024.7.0",
+    "cfgrib==0.9.15.1",
+    "dask==2024.8.0",
+    "netCDF4==1.7.2",
+    "scipy==1.13.1",
+    "imageio==2.37.3",
+    "imageio-ffmpeg==0.6.0",
+    "pyyaml==6.0.2",
+]
+
+[project.optional-dependencies]
+ml = [
+    "torch>=2.2,<3",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+include = ["era5*", "landfire*", "ml*", "pyregence*", "util*"]
+exclude = ["pyretechnics*"]

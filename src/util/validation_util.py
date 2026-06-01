@@ -8,10 +8,9 @@ layer_range_file = os.path.join('inputData', 'layer_ranges.csv')
 GLOBAL_NULL_VALUE = -9999
 BATCH_RESOLUTION_MAP = {
     "fire_spread" : 300,
-    "frp" : 300,
-    "fuel_topo" : 30,
+    "fuel_structure" : 30,
     "high_res_climate" : 600,
-    "landfire" : 30,
+    "veg_fm_topo" : 30,
     "low_res_climate" : 9000
 }
 
@@ -28,19 +27,19 @@ def get_layer_range_data():
     key = 'layer'
     return layer_range_df.set_index(key).to_dict(orient='index')
 
-def find_landfire_layer_file(abbrev, lf_dir):
+def find_layer_file_containing(abbrev, layer_dir):
     """
-    Find the layer file corresponding to the given abbreviation in the given directory of LANDFIRE data.
+    Find the layer file corresponding to the given abbreviation in a directory.
 
     Args:
-        abbrev (str): Abbreviation of the LANDFIRE layer to search for.
-        lf_dir (str): Path of the LANDFIRE directory in which we should search.
+        abbrev (str): Abbreviation of the layer to search for.
+        layer_dir (str): Path of the directory in which we should search.
 
     Returns:
-        str: Name of the corresponding LANDFIRE layer file.
+        str: Name of the corresponding layer file.
     """
-    for file in os.listdir(lf_dir):
-        if abbrev in file and os.path.isfile(os.path.join(lf_dir, file)):
+    for file in sorted(os.listdir(layer_dir)):
+        if abbrev in file and os.path.isfile(os.path.join(layer_dir, file)):
             return file
     return None
 
@@ -113,12 +112,12 @@ def validate_one_fire_data(fid, layer_data_dict=None):
          a certain layer category.
 
     Returns:
-        tuple: Tuple of a boolean and three lists. The boolean takes a True value if the fire data is valid; False otherwise.
+        tuple: Tuple of a boolean and four lists. The boolean takes a True value if the fire data is valid; False otherwise.
          The first list contains tuples of the form (layer, band, indices). These store the invalid layers, the time band at
          which the data is invalid, and the indices in the 2D TIF data array that are invalid. The second list contains
          the names of layers that have unexpected spatial properties as compared to other layers. It also contains the 
          names of layers whose correspond TIF has unexpected resolution. The third list contains the names of layers that
-         are missing (i.e. no TIF files).
+         are missing (i.e. no TIF files). The fourth list contains layers with invalid band counts.
     """
 
     # If no layer data dictionary is specified, then obtain it with get_layer_range_data()
@@ -140,7 +139,7 @@ def validate_one_fire_data(fid, layer_data_dict=None):
     farea_tif = os.path.join(fire_folder, 'fire_spread', 'farea.tif')
     
     for layer, layer_data in layer_data_dict.items():
-        # Since there are multiple potential EVT layers (LANDFIRE), if we have already found data for one, skip the others
+        # Keep support for layer range files with multiple EVT aliases.
         if 'evt' in layer and evt_found:
             continue
 
@@ -152,41 +151,21 @@ def validate_one_fire_data(fid, layer_data_dict=None):
         if not os.path.exists(layer_folder):
             raise NotADirectoryError(f'No folder for layer category {category} and fire {fid} exists')
         
-        # LANDFIRE layers are named differently than just "{layer}.tif"
-        if category == 'landfire':
-            # Get the TIF file for the LANDFIRE layer
-            lf_layer_file = find_landfire_layer_file(layer, layer_folder)
-
-            if lf_layer_file is None:
-                # Fuel behavior model layers (f13/f40) can also be named (fbfm13/fbfm40)
-                if layer == 'f13' or layer == 'f40':
-                    lf_layer_file = find_landfire_layer_file(layer.replace('f', 'fbfm'), layer_folder)
-                    layer_tif = os.path.join(layer_folder, lf_layer_file)
-                # If layer files for 105/200evt cannot be found, skip since layer may be 220evt
-                # Note: Use "'105evt' in layer" instead of "layer == '105evt'"" since for Alaska/Hawaii, layer
-                # file names are prepended with either 'ak_' or 'hi_' (e.g. 'ak_105evt')
-                elif '105evt' in layer or '200evt' in layer:
-                    continue
-                # Since 220evt is the last possible EVT layer, if it cannot be found, then the layer does not exist
-                elif '220evt' in layer:
-                    layer_tif = None
-                else:
-                    layer_tif = None
+        # VFMT layers may include prefixes/suffixes in their TIF names.
+        if category == 'veg_fm_topo':
+            layer_file = find_layer_file_containing(layer, layer_folder)
+            if layer_file is None and layer in {'fbfm13', 'fbfm40'}:
+                layer_file = find_layer_file_containing(layer.replace('fbfm', 'f'), layer_folder)
+            if layer_file is None:
+                layer_tif = None
             else:
-                layer_tif = os.path.join(layer_folder, lf_layer_file)
+                layer_tif = os.path.join(layer_folder, layer_file)
         else:
             layer_tif = os.path.join(layer_folder, f'{layer}.tif')
         
         if layer_tif is None or not os.path.exists(layer_tif):
             missing_layers.append(layer)
             continue
-            # # Acceptable if fire line data is missing for some fires
-            # if layer == 'fline':
-            #     continue
-            # # Acceptable for now if roads data is missing for Alaska/Hawaii fires
-            # elif layer == 'roads' and (fid.startswith('AK') or fid.startswith('HI')):
-            #     continue
-            # raise FileNotFoundError(f'No file for layer {layer} and fire {fid} exists')
         
         if 'evt' in layer:
             evt_found = True
@@ -252,8 +231,8 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
         verbose (bool, optional): True if descriptive messages should be printed; False otherwise. Defaults to False.
 
     Returns:
-        tuple: Tuples with two lists. The first list contains tuples where the first entry corresponds to a fire event ID 
-        with invalid data and the remaining entries in each tuple correspond to the lists returned by validate_one_fire_data().
+        tuple: Tuple with three lists: fires with invalid data, fires with missing data, and fires with invalid
+        band counts.
     """
     # If no layer data dictionary is specified, then obtain it with get_layer_range_data()
     layer_data_dict = layer_data_dict if layer_data_dict is not None else get_layer_range_data()
@@ -286,7 +265,7 @@ def validate_existing_fires(layer_data_dict=None, verbose=False):
     if verbose:
         print(f'Done with validation ... Validated {processed_count} fires')
     
-    return invalid_fires, fires_with_missing_data
+    return invalid_fires, fires_with_missing_data, invalid_fires_band_count
 
 if __name__ == '__main__':
     fire_id = 'ID4308111519720240903'

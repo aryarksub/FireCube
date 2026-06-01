@@ -2,8 +2,6 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 import rasterio
-from rasterio.coords import BoundingBox
-from rasterio.transform import Affine, from_origin
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 import xarray as xr
@@ -279,25 +277,6 @@ def crop_tif_based_on_area(in_tif, out_tif, bounds):
         with rasterio.open(out_tif, 'w', **new_meta) as dst:
             dst.write(data)
 
-def get_coarsest_resolution(tifs):
-    """
-    Determine the largest/coarsest spatial resolution for the given TIF files.
-
-    Args:
-        tifs (list): List of paths to TIF files.
-
-    Returns:
-        float: Coarsest/maximum spatial resolution among the given TIFs.
-    """
-    max_res = 0
-    for tif in tifs:
-        with rasterio.open(tif) as src:
-            res_x, res_y = src.res
-            # Ensure pixels are squar
-            assert res_x == res_y
-            max_res = max(max_res, res_x)
-    return max_res
-
 def pad_bounds_to_resolution_multiple(bounds, coarsest_res=9000):
     """
     Pad the given bounds to be a multiple of the given resolution (typically the coarsest resolution amongst a set
@@ -354,76 +333,10 @@ def center_and_crop_tifs_to_same_area(in_tifs, out_tifs, bounds):
     # Basic assertions
     assert len(in_tifs) == len(out_tifs) and len(bounds) == 4
 
-    # NOTE: Previously, was using coarsest resolution across input TIFs (get_coarsest_resolution(in_tifs)) 
-    # ... now just using default of 9000 (ERA5 res)
     final_bounds = pad_bounds_to_resolution_multiple(bounds, 9000)
 
     for (in_tif, out_tif) in zip(in_tifs, out_tifs):
         crop_tif_based_on_area(in_tif, out_tif, final_bounds)
-
-def pad_tif_to_bounds(in_tif, out_tif, bounds):
-    """
-    Pad the given TIF to fit the specified bounds while preserving the original data placement/resolution.
-
-    Args:
-        in_tif (str): Path of the input TIF file to be padded.
-        out_tif (str): Path where the output (padded) TIF file will be saved.
-        bounds (list): List of bounding box coordinates in the same CRS as the input TIF. There should be
-         four coordinates: x_min, y_min, x_max, y_max.
-    """
-    with rasterio.open(in_tif) as src:
-        original_data = src.read()
-        original_bounds = src.bounds
-        # Assume the data type is float if the original data type is a float type; otherwise, use float32 to allow for NaN values
-        dtype = src.dtypes[0] if 'float' in src.dtypes[0] else 'float32'
-        count = src.count
-
-        xres, yres = src.res
-        assert xres == yres
-
-        xmin, ymin, xmax, ymax = bounds
-        bounds = BoundingBox(left=xmin, bottom=ymin, right=xmax, top=ymax)
-
-        # Compute new width and height in pixels
-        new_width = int(np.ceil(abs(bounds.right - bounds.left) / xres))
-        new_height = int(np.ceil(abs(bounds.top - bounds.bottom) / yres))
-
-        # Compute pixel offsets to place original data
-        col_offset = max(0, int((original_bounds.left - bounds.left) / xres))
-        row_offset = max(0, int((bounds.top - original_bounds.top) / yres))
-
-        # Width/Height needed to fit original data within padded area
-        required_width = col_offset + src.width
-        required_height = row_offset + src.height
-
-        # Uncomment for debugging
-        # print(in_tif, out_tif, src.height, src.width, new_height, new_width, required_height, required_width, row_offset, col_offset)
-        # print(bounds.left <= original_bounds.left, bounds.right >= original_bounds.right, bounds.top >= original_bounds.top, bounds.bottom <= original_bounds.bottom)
-
-        # Increase padded area if needed
-        new_width = max(new_width, required_width)
-        new_height = max(new_height, required_height)
-
-        # Compute new transform for the new bounding box
-        new_transform = from_origin(bounds.left, bounds.top, xres, yres)
-
-        # Create empty array filled with zeros
-        # padded_data = np.zeros((count, new_height, new_width), dtype=dtype)
-        padded_data = np.full((count, new_height, new_width), np.nan, dtype=dtype)
-
-        # Copy original data into the padded array
-        padded_data[:, row_offset:row_offset + src.height, col_offset:col_offset + src.width] = original_data.astype(dtype)
-
-        # Update metadata
-        profile = src.profile.copy()
-        profile.update({
-            'height': new_height,
-            'width': new_width,
-            'transform': new_transform
-        })
-
-        with rasterio.open(out_tif, 'w', **profile) as dst:
-            dst.write(padded_data)
 
 def get_tif_bounds(tif):
     """

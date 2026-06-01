@@ -16,7 +16,6 @@ DEFAULT_REQUIRED_VARS = [
     "fire_spread/fline",
     "fire_spread/farea",
     "fire_spread/nfp",
-    "fire_spread/burned_state",
     "fire_spread/frp",
     "fuel_structure/cbd",
     "fuel_structure/cbh",
@@ -77,10 +76,16 @@ class GeoTiffDatasetStructured(Dataset):
     """
     PyTorch Dataset that returns a structured dictionary of all variables.
     Each GeoTIFF is treated as one variable (filename stem).
-    Time is stored in GeoTIFF bands. Static rasters have a single band.
+    Static rasters have a single band.
+
+    For the current PyroStack layout, `fire_spread/*` is expanded from sparse
+    FEDS snapshots to an hourly trajectory using `fire_times.csv`:
+    - start 24h before the first `feds=True` timestamp
+    - repeat each FEDS frame forward until the next FEDS timestamp
 
     Returns: {
         'event_name': str,
+        'time_info': {...},
         'variables': {
             'category/var': {
                 'var_name': str,
@@ -105,24 +110,37 @@ class GeoTiffDatasetStructured(Dataset):
 
     def _discover_fire_events(self):
         fire_events = []
+        skipped_missing_time_csv = []
         for event_dir in sorted(os.listdir(self.base_path)):
             event_path = os.path.join(self.base_path, event_dir)
             if not os.path.isdir(event_path):
                 continue
-            # Only keep events that have the alignment CSV.
-            if not os.path.exists(os.path.join(event_path, "fire_times.csv")):
+
+            csv_path = os.path.join(event_path, "fire_times.csv")
+            if not os.path.exists(csv_path):
+                skipped_missing_time_csv.append(event_dir)
                 continue
+
             fire_events.append((event_dir, event_path))
+
+        if skipped_missing_time_csv:
+            preview = ", ".join(skipped_missing_time_csv[:5])
+            suffix = "..." if len(skipped_missing_time_csv) > 5 else ""
+            print(
+                "GeoTiffDatasetStructured: skipped "
+                f"{len(skipped_missing_time_csv)} event(s) missing fire_times.csv "
+                f"(e.g. {preview}{suffix})"
+            )
         return fire_events
 
-    def _canonical_landfire_var(self, var_name: str) -> str:
+    def _canonical_veg_fm_topo_var(self, var_name: str) -> str:
         v = var_name.lower()
         v = re.sub(r"^(ak_|hi_)", "", v)
-        if re.search(r"\bevt\b", v):
+        if "evt" in v:
             return "evt"
-        if re.search(r"(fbfm13|f13_)", v):
+        if re.search(r"(fbfm13|f13)", v):
             return "fbfm13"
-        if re.search(r"(fbfm40|f40_)", v):
+        if re.search(r"(fbfm40|f40)", v):
             return "fbfm40"
         if re.search(r"roads", v):
             return "roads"
@@ -135,30 +153,37 @@ class GeoTiffDatasetStructured(Dataset):
         return var_name
 
     def _load_fire_time_info(self, event_path: str) -> Dict:
-        # Read fire_times.csv to determine the time alignment between FEDS
-        # and other variables.
         if event_path in self._fire_time_cache:
             cached = self._fire_time_cache[event_path]
+            if cached is None:
+                raise RuntimeError(f"Cached invalid fire_times.csv for {event_path}")
             return cached
 
         csv_path = os.path.join(event_path, "fire_times.csv")
         if not os.path.exists(csv_path):
             raise FileNotFoundError(f"Missing fire_times.csv in {event_path}")
 
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
+        try:
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+        except Exception as e:
+            raise RuntimeError(f"Failed reading {csv_path}: {e}")
+
+        if not rows or "feds" not in rows[0]:
+            raise ValueError(f"Invalid fire_times.csv in {event_path}: missing 'feds' column")
 
         def _as_bool(x) -> bool:
             return str(x).strip().lower() in {"1", "true", "t", "yes", "y"}
 
         feds_mask_full = [_as_bool(r.get("feds", False)) for r in rows]
+        if not any(feds_mask_full):
+            raise ValueError(f"Invalid fire_times.csv in {event_path}: no feds=True rows found")
+
         first_true = next(i for i, v in enumerate(feds_mask_full) if v)
         last_true = max(i for i, v in enumerate(feds_mask_full) if v)
 
-        # Align to 24 hours before the first FEDS detection.
         start_idx = max(0, first_true - 24)
-        # End at the final FEDS observation (inclusive).
         end_idx = last_true + 1
         feds_mask = feds_mask_full[start_idx:end_idx]
         feds_true_idx = [i for i, v in enumerate(feds_mask) if v]
@@ -174,6 +199,9 @@ class GeoTiffDatasetStructured(Dataset):
         self._fire_time_cache[event_path] = info
         return info
 
+    def get_event_time_info(self, event_path: str) -> Dict:
+        return self._load_fire_time_info(event_path)
+
     def _slice_or_pad_dynamic(self, data: torch.Tensor, time_info: Optional[Dict]) -> torch.Tensor:
         if time_info is None or data.shape[0] <= 1:
             return data
@@ -185,6 +213,9 @@ class GeoTiffDatasetStructured(Dataset):
 
         if T == T_out:
             return data
+
+        if start_idx >= T:
+            return torch.zeros((T_out, H, W), dtype=data.dtype)
 
         sliced = data[start_idx : min(T, start_idx + T_out)]
         if sliced.shape[0] == T_out:
@@ -249,60 +280,18 @@ class GeoTiffDatasetStructured(Dataset):
 
     def __len__(self):
         return len(self.fire_events)
-    
-    def _add_burned_state(self, batch):
-        vars_all = batch["variables"]
-
-        required = [
-            "fire_spread/farea",
-            "fire_spread/fline",
-            "fire_spread/nfp",
-        ]
-
-        if not all(k in vars_all for k in required):
-            return  # Cannot build burned state
-
-        farea = vars_all["fire_spread/farea"]["data"]
-        fline  = vars_all["fire_spread/fline"]["data"]
-        nfp    = vars_all["fire_spread/nfp"]["data"]
-
-        T, H, W = farea.shape
-        burned = torch.zeros((T, H, W), dtype=torch.float32)
-
-        for t in range(T):
-            area = farea[t]
-            line  = fline[t]
-            new   = nfp[t]
-
-            active = (line > 0) | (new > 0)
-            inside = (area > 0)
-
-            burned[t][active] = 1
-            burned[t][inside & ~active] = 2
-
-        var_key = "fire_spread/burned_state"
-        var_entry = {
-            "var_name": "burned_state",
-            "category": "fire_spread",
-            "data": burned,
-            "shape": tuple(burned.shape),
-            "files": [],
-        }
-
-        batch["variables"][var_key] = var_entry
-        batch["categories"].setdefault("fire_spread", {})["burned_state"] = var_entry
 
     def __getitem__(self, idx):
         event_name, event_path = self.fire_events[idx]
-        batch = {"event_name": event_name, "variables": {}, "categories": {}}
         event_time_info = self._load_fire_time_info(event_path)
-        batch["time_info"] = {
-            "length": event_time_info["length"],
-            "start_idx": event_time_info["start_idx"],
-            "times": event_time_info["times"],
-            "feds_mask": event_time_info["feds_mask"],
-        }
-
+        batch = {"event_name": event_name, "variables": {}, "categories": {}}
+        if event_time_info is not None:
+            batch["time_info"] = {
+                "length": event_time_info["length"],
+                "start_idx": event_time_info["start_idx"],
+                "times": event_time_info["times"],
+                "feds_mask": event_time_info["feds_mask"],
+            }
 
         for category_dir in sorted(os.listdir(event_path)):
             category_path = os.path.join(event_path, category_dir)
@@ -316,8 +305,8 @@ class GeoTiffDatasetStructured(Dataset):
             for tif_file in tif_files:
                 file_name = os.path.basename(tif_file)
                 var_name = os.path.splitext(file_name)[0]
-                if category_dir == "landfire":
-                    var_name = self._canonical_landfire_var(var_name)
+                if category_dir == "veg_fm_topo":
+                    var_name = self._canonical_veg_fm_topo_var(var_name)
                 try:
                     with rasterio.open(tif_file, "r") as src:
                         data = torch.from_numpy(src.read()).float()  # (time, h, w)
@@ -344,7 +333,6 @@ class GeoTiffDatasetStructured(Dataset):
                 batch["variables"][var_key] = var_entry
                 batch["categories"].setdefault(category_dir, {})[var_name] = var_entry
 
-        self._add_burned_state(batch)
         return batch
 
 
@@ -355,12 +343,14 @@ def firecube_collate(batch):
     """
     if len(batch) == 1:
         return batch[0]
-    return {
+    out = {
         "event_name": [b["event_name"] for b in batch],
         "variables": [b["variables"] for b in batch],
         "categories": [b["categories"] for b in batch],
-        "time_info": [b["time_info"] for b in batch],
     }
+    if any("time_info" in b for b in batch):
+        out["time_info"] = [b.get("time_info") for b in batch]
+    return out
 
 
 class OneStepDatasetSimple(Dataset):
@@ -386,7 +376,7 @@ class OneStepDatasetSimple(Dataset):
         self.missing_value = missing_value
         self.stats = stats or {}
 
-        self.fire_vars = [v for v in required_vars if v.split("/")[0] in ("fire_spread",)]
+        self.fire_vars = [v for v in required_vars if v.split("/")[0] == "fire_spread"]
         self.hourly_vars = [v for v in required_vars if v.split("/")[0] in ("high_res_climate", "low_res_climate")]
         self.static_vars = [v for v in required_vars if v.split("/")[0] in ("fuel_structure", "veg_fm_topo")]
         self.sample_index = self._build_sample_index()
@@ -402,14 +392,14 @@ class OneStepDatasetSimple(Dataset):
             "Use one of: mean or concat."
         )
 
-    def _canonical_landfire_var(self, var_name: str) -> str:
+    def _canonical_veg_fm_topo_var(self, var_name: str) -> str:
         v = var_name.lower()
         v = re.sub(r"^(ak_|hi_)", "", v)
-        if re.search(r"\bevt\b", v):
+        if "evt" in v:
             return "evt"
-        if re.search(r"(fbfm13|f13_)", v):
+        if re.search(r"(fbfm13|f13)", v):
             return "fbfm13"
-        if re.search(r"(fbfm40|f40_)", v):
+        if re.search(r"(fbfm40|f40)", v):
             return "fbfm40"
         if re.search(r"roads", v):
             return "roads"
@@ -424,12 +414,12 @@ class OneStepDatasetSimple(Dataset):
     def _normalize_vars(self, vars_all: Dict) -> Dict:
         norm = {}
         for key, info in vars_all.items():
-            if not key.startswith("landfire/"):
+            if not key.startswith("veg_fm_topo/"):
                 if key not in norm:
                     norm[key] = info
                 continue
             cat, var = key.split("/", 1)
-            canon = self._canonical_landfire_var(var)
+            canon = self._canonical_veg_fm_topo_var(var)
             canon_key = f"{cat}/{canon}"
             if canon_key not in norm:
                 entry = info.copy()
@@ -442,17 +432,18 @@ class OneStepDatasetSimple(Dataset):
 
     def _target_timesteps_for_event(self, event_path: str) -> int:
         category, var = self.target_var.split("/", 1)
-        # Use farea to determine timesteps since there is no file for burned_state (it is derived on the fly)
-        if var == "burned_state":
-            var = "farea" 
+        if category == "fire_spread":
+            time_info = self.base.get_event_time_info(event_path)
+            if time_info is not None:
+                return int(time_info["length"])
         category_path = os.path.join(event_path, category)
         if not os.path.isdir(category_path):
             return 0
         for tif_file in sorted(glob.glob(os.path.join(category_path, "*.tif"))):
             file_name = os.path.splitext(os.path.basename(tif_file))[0]
             cand = file_name
-            if category == "landfire":
-                cand = self._canonical_landfire_var(cand)
+            if category == "veg_fm_topo":
+                cand = self._canonical_veg_fm_topo_var(cand)
             if cand != var:
                 continue
             try:
@@ -473,11 +464,11 @@ class OneStepDatasetSimple(Dataset):
     def _build_sample_index(self):
         index = []
         for event_idx, (_, event_path) in enumerate(self.base.fire_events):
-            ti = self.base._load_fire_time_info(event_path)
-            T = int(ti["length"])
-            mask = ti["feds_mask"]
-            for t in range(self.step, T - self.horizon, self.step):
-                if mask[t + self.horizon]:
+            time_info = self.base.get_event_time_info(event_path)
+            T_tgt = int(time_info["length"])
+            feds_mask = time_info["feds_mask"]
+            for t in range(self.step, T_tgt - self.horizon, self.step):
+                if feds_mask[t + self.horizon]:
                     index.append((event_idx, t))
         return index
 
@@ -516,10 +507,10 @@ class OneStepDatasetSimple(Dataset):
         x_fire = torch.stack(fire_frames, dim=0)
 
         hourly_frames = []
-        time_window = list(range(max(0, t - self.step + 1), t + 1))
+        time_window = list(range(t, min(T_tgt, t + self.step)))
         if len(time_window) < self.step:
-            pad_val = time_window[0] if time_window else 0
-            time_window = [pad_val] * (self.step - len(time_window)) + time_window
+            pad_val = time_window[-1] if time_window else min(t, max(T_tgt - 1, 0))
+            time_window = time_window + [pad_val] * (self.step - len(time_window))
         for k in self.hourly_vars:
             if k not in vars_all:
                 if hourly_mode == "mean":
@@ -575,7 +566,7 @@ class OneStepDatasetSimple(Dataset):
 
         t_y = min(t + self.horizon, T_tgt - 1)
         y = tgt[t_y].unsqueeze(0)
-        if self.target_var.split("/")[0] in ("fire_spread"):
+        if self.target_var.split("/")[0] == "fire_spread":
             y = torch.nan_to_num(y, nan=0.0)
             y = torch.where(y <= -9990.0, torch.zeros_like(y), y)
 

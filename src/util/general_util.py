@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import rasterio
 from tqdm import tqdm
-import time
 
 ffmpeg_path = imgffm.get_ffmpeg_exe()
 mpl.rcParams['animation.ffmpeg_path'] = ffmpeg_path
@@ -30,7 +29,6 @@ subdir_type_resample = 'resample'
 dir_output = 'output'
 dir_sum_vis = 'sum_vis' # summary visualizations
 dir_cubes = 'cubes' # top-level dir for cube outputs
-dir_crop_cubes = 'cropped_cubes' # cropped cube outputs
 subdir_vis = 'vis' # visualizations
 subdir_lrc = 'low_res_climate' # era5 9000m
 subdir_hrc = 'high_res_climate' # pyregence 600m
@@ -43,8 +41,6 @@ data_sources = [subdir_era5, subdir_pyr, subdir_lf, subdir_feds]#, subdir_frp]
 var_types = [subdir_type_original, subdir_type_converted, subdir_type_resample]
 
 data_batches = [subdir_vis, subdir_lrc, subdir_hrc, subdir_fuel_structure, subdir_vfmt, subdir_firespread]#, subdir_frp]
-
-NEW_FIRES_FILE = os.path.join('src', 'temp_new_fids.txt')
 
 def create_dirs_for_fire(fid):
     """
@@ -524,40 +520,3 @@ def remove_temp_dir_files(fid, del_dir_types=[], del_data_sources=[], del_var_ty
                     file_path = os.path.join(dir_path, fname)
                     if os.path.isfile(file_path):
                         os.remove(os.path.join(dir_path, fname))
-
-def remove_old_files(directory, cutoff_timestamp=time.mktime((2026, 4, 1, 0, 0, 0, 0, 0, -1))):
-    """
-    Remove files in 'directory' created before 'cutoff_timestamp'.
-    """
-    for filename in os.listdir(directory):
-        file_path = os.path.join(directory, filename)
-
-        if os.path.isfile(file_path):
-            try:
-                # Get creation time
-                creation_time = os.path.getmtime(file_path)
-                # print(f"Checking file: {file_path}, creation_time: {datetime.fromtimestamp(creation_time)}, cutoff_time: {datetime.fromtimestamp(cutoff_timestamp)}")
-
-                if creation_time < cutoff_timestamp:
-                    os.remove(file_path)
-            except Exception as e:
-                print(f"Error processing {file_path}: {e}")
-
-def add_to_new_fires_list(new_fid, suffix='1'):
-    """
-    Add the given fire event ID to the list of new fires.
-
-    Args:
-        new_fid (str): Fire event ID to add to the list.
-    """
-    new_fires_file = NEW_FIRES_FILE.replace('.txt', f'_{suffix}.txt')
-    if not os.path.exists(new_fires_file):
-        with open(new_fires_file, 'w') as f:
-            f.write(f"{new_fid}\n")
-        return
-    with open(new_fires_file, 'r') as f:
-        existing_fids = set(line.strip() for line in f)
-    existing_fids.add(new_fid)
-    with open(new_fires_file, 'w') as f:
-        for fid in sorted(existing_fids):
-            f.write(f"{fid}\n")

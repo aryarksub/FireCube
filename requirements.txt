@@ -4,6 +4,7 @@ grpcio==1.71.0
 matplotlib==3.9.4
 numpy==1.24.0
 pandas==2.3.0
+psutil==7.0.0
 protobuf==6.31.1
 rasterio==1.4.3
 Requests==2.32.4
@@ -13,7 +14,6 @@ cfgrib==0.9.15.1
 dask==2024.8.0
 netCDF4==1.7.2
 scipy==1.13.1
-imageio==2.37.9
+imageio==2.37.3
 imageio-ffmpeg==0.6.0
 pyyaml==6.0.2
-wandb==0.17.4

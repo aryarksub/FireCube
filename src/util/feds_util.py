@@ -6,11 +6,9 @@ import pandas as pd
 import rasterio
 import shutil
 from rasterio.features import rasterize
-from rasterio.transform import from_bounds, from_origin
-import uuid
+from rasterio.transform import from_origin
 
 import util.general_util as gen_util
-import util.processing_util as proc_util
 
 # Supress SettingWithCopyWarning
 pd.set_option('mode.chained_assignment', None)
@@ -191,8 +189,8 @@ def get_canonical_grid_from_bounds(bounds, resolution):
 
 
 def rasterize_gdf_and_save_as_tif(
-    gdf, out_tif, resolution, gdf_times=None, time_range=None, crs='EPSG:5070', start_time=None, end_time=None,
-    num_hours=None, use_prev=False, conv_delta=None, out_transform=None, out_width=None, out_height=None
+    gdf, out_tif, gdf_times=None, time_range=None, crs='EPSG:5070', start_time=None, end_time=None,
+    num_hours=None, use_prev=False, conv_delta=None, *, out_transform, out_width, out_height
 ):
     """
     Rasterize the given GeoDataFrame with FEDS data and save it as a TIF file at the specified output location. This process 
@@ -201,7 +199,6 @@ def rasterize_gdf_and_save_as_tif(
     Args:
         gdf (GeoDataFrame): GeoDataFrame with geometries of fire data.
         out_tif (str): Name of the output TIF file to where rasterized data should be stored.
-        resolution (float): Output resolution in which the rasterized data should be stored.
         crs (str, optional): Coordinate reference system code (according to EPSG) in which the rasterized data
          should be stored. Defaults to 'EPSG:5070'.
         start_time (pandas.Timestamp, optional): Start time from which data should be rasterized. Defaults to None.
@@ -209,10 +206,9 @@ def rasterize_gdf_and_save_as_tif(
         num_hours (int, optional): Number of hours for which data should be rasterized. Defaults to None.
         use_prev (bool, optional): Whether to use previous non-null data for rasterization if no data exists. Defaults to False.
         conv_delta (pandas.Timedelta, optional): Time delta to apply to FEDS data times for conversion from LST to UTC. Defaults to None.
-        out_transform (Affine, optional): Optional target transform for direct writing to a canonical grid.
-         If omitted, bounds are derived from input geometry and legacy behavior is used.
-        out_width (int, optional): Optional target width for direct writing to a canonical grid.
-        out_height (int, optional): Optional target height for direct writing to a canonical grid.
+        out_transform (Affine): Target transform for writing to the canonical final grid.
+        out_width (int): Target width for writing to the canonical final grid.
+        out_height (int): Target height for writing to the canonical final grid.
     """
     # Convert gdf (GeoDataFrame) to correct CRS and get width, height based on desired resolution
     gdf = gdf.to_crs(crs)
@@ -222,16 +218,9 @@ def rasterize_gdf_and_save_as_tif(
             gdf, conv_delta=conv_delta, start_time=start_time, end_time=end_time, num_hours=num_hours
         )
 
-    direct_write = out_transform is not None and out_width is not None and out_height is not None
-    if direct_write:
-        transform = out_transform
-        width = int(out_width)
-        height = int(out_height)
-    else:
-        minx, miny, maxx, maxy = gdf.total_bounds
-        width = max(1, int((maxx - minx) / resolution))
-        height = max(1, int((maxy - miny) / resolution))
-        transform = from_bounds(minx, miny, maxx, maxy, width, height)
+    transform = out_transform
+    width = int(out_width)
+    height = int(out_height)
 
     prev_non_null_df_time = None
     rasterized_bands = []
@@ -271,43 +260,23 @@ def rasterize_gdf_and_save_as_tif(
 
     # Merge all rasters into a single array, and then a single TIF file
     stacked_array = np.stack(rasterized_bands)
-    if direct_write:
-        with rasterio.open(
-            out_tif,
-            'w',
-            driver='GTiff',
-            height=stacked_array.shape[1],
-            width=stacked_array.shape[2],
-            count=stacked_array.shape[0],  # number of bands
-            dtype=stacked_array.dtype,
-            crs=crs,
-            transform=transform
-        ) as dst:
-            for i in range(stacked_array.shape[0]):
-                dst.write(stacked_array[i], i + 1)  # rasterio bands are 1-based
-    else:
-        temp_tif_file = f'temp_rasterized_gdf_{uuid.uuid4()}.tif'
-        with rasterio.open(
-            temp_tif_file,
-            'w',
-            driver='GTiff',
-            height=stacked_array.shape[1],
-            width=stacked_array.shape[2],
-            count=stacked_array.shape[0],  # number of bands
-            dtype=stacked_array.dtype,
-            crs=crs,
-            transform=transform
-        ) as dst:
-            for i in range(stacked_array.shape[0]):
-                dst.write(stacked_array[i], i + 1)  # rasterio bands are 1-based
-
-        # Resample the tif to correct resolution in case the above procedure slightly shifts resolution
-        proc_util.resample_tif(temp_tif_file, out_tif, target_res=resolution, catype=True)
-        os.remove(temp_tif_file)
+    with rasterio.open(
+        out_tif,
+        'w',
+        driver='GTiff',
+        height=stacked_array.shape[1],
+        width=stacked_array.shape[2],
+        count=stacked_array.shape[0],  # number of bands
+        dtype=stacked_array.dtype,
+        crs=crs,
+        transform=transform
+    ) as dst:
+        for i in range(stacked_array.shape[0]):
+            dst.write(stacked_array[i], i + 1)  # rasterio bands are 1-based
             
 def driver_feds(
     fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num_hours=None, plot_orig=False, use_prev=False,
-    conv_delta=None, direct_to_final_grid=False
+    conv_delta=None
 ):
     """
     Driver function for obtaining, cropping, resampling, and plotting FEDS data.
@@ -324,9 +293,6 @@ def driver_feds(
         plot_orig (bool, optional): True if FEDS data should be plotted; False otherwise. Defaults to False.
         use_prev (bool, optional): Whether to use previous non-null data for rasterization if no data exists. Defaults to False.
         conv_delta (pandas.Timedelta, optional): Time delta to apply to FEDS data times for conversion from LST to UTC. Defaults to None.
-        direct_to_final_grid (bool, optional): True to rasterize directly to a canonical final grid
-         (A/B test mode); False for legacy rasterize+resample+pad flow. Defaults to False.
-
     Raises:
         ValueError: Occurs when fire area or new fire pixel data is empty.
     """
@@ -342,8 +308,7 @@ def driver_feds(
         start_time=fire_start, end_time=fire_end, num_hours=num_hours,
         save_csv=os.path.join(gen_util.dir_output, gen_util.dir_cubes, fid, f'fire_times.csv')
     )
-    if direct_to_final_grid:
-        final_transform, final_width, final_height = get_canonical_grid_from_bounds(final_bounds, res)
+    final_transform, final_width, final_height = get_canonical_grid_from_bounds(final_bounds, res)
 
     for var in gdfs:
         # For each "variable" (farea, fline, nfp), get the temporary data/video file names
@@ -365,28 +330,18 @@ def driver_feds(
 
         final_out_tif = gen_util.get_output_data_filename(fid, var, gen_util.subdir_firespread)
 
-        if direct_to_final_grid:
-            rasterize_gdf_and_save_as_tif(
-                gdfs[var],
-                out_tif=var_tif,
-                resolution=res,
-                gdf_times=times,
-                time_range=trange,
-                use_prev=use_prev,
-                conv_delta=conv_delta,
-                out_transform=final_transform,
-                out_width=final_width,
-                out_height=final_height
-            )
-            shutil.copyfile(var_tif, final_out_tif)
-        else:
-            # Save rasterized data to the temporary TIF file
-            rasterize_gdf_and_save_as_tif(
-                gdfs[var], out_tif=var_tif, resolution=res, gdf_times=times, time_range=trange,
-                use_prev=use_prev, conv_delta=conv_delta
-            )
-            # Add padding to the temporary TIF file based on the final_bounds argument
-            proc_util.pad_tif_to_bounds(var_tif, final_out_tif, final_bounds)
+        rasterize_gdf_and_save_as_tif(
+            gdfs[var],
+            out_tif=var_tif,
+            gdf_times=times,
+            time_range=trange,
+            use_prev=use_prev,
+            conv_delta=conv_delta,
+            out_transform=final_transform,
+            out_width=final_width,
+            out_height=final_height
+        )
+        shutil.copyfile(var_tif, final_out_tif)
 
         # Plot FEDS data if needed
         if plot_orig:
@@ -441,8 +396,8 @@ def get_gdf_firepix_t(df_fp, t, out_crs="epsg:4326"):
     return gdf_fp_t
 
 def rasterize_frp_and_save_as_tif(
-    gdf_farea_rd, df_fp, out_tif, resolution, crs='EPSG:5070', start_time=None, end_time=None, num_hours=None,
-    use_prev=False, conv_delta=None, out_transform=None, out_width=None, out_height=None
+    gdf_farea_rd, df_fp, out_tif, crs='EPSG:5070', start_time=None, end_time=None, num_hours=None,
+    use_prev=False, conv_delta=None, *, out_transform, out_width, out_height
 ):
     """
     Rasterize the given GeoDataFrame with FRP data and save it as a TIF file at the specified output location. This process 
@@ -452,7 +407,6 @@ def rasterize_frp_and_save_as_tif(
         gdf_farea_rd (GeoDataFrame): GeoDataFrame with geometries of fire area data.
         df_fp (DataFrame): DataFrame with fire pixel data corresponding to a single fire.
         out_tif (str): Name of the output TIF file to where rasterized data should be stored.
-        resolution (float): Output resolution in which the rasterized data should be stored.
         crs (str, optional): Coordinate reference system code (according to EPSG) in which the rasterized data
          should be stored. Defaults to 'EPSG:5070'.
         start_time (pandas.Timestamp, optional): Start time from which data should be rasterized. Defaults to None.
@@ -460,23 +414,15 @@ def rasterize_frp_and_save_as_tif(
         num_hours (int, optional): Number of hours for which data should be rasterized. Defaults to None.
         use_prev (bool, optional): Whether to use previous non-null data for rasterization if no data exists. Defaults to False.
         conv_delta (pandas.Timedelta, optional): Time delta to apply to FEDS data times for conversion from LST to UTC. Defaults to None.
-        out_transform (Affine, optional): Optional target transform for direct writing to a canonical grid.
-         If omitted, bounds are derived from area geometry and legacy behavior is used.
-        out_width (int, optional): Optional target width for direct writing to a canonical grid.
-        out_height (int, optional): Optional target height for direct writing to a canonical grid.
+        out_transform (Affine): Target transform for writing to the canonical final grid.
+        out_width (int): Target width for writing to the canonical final grid.
+        out_height (int): Target height for writing to the canonical final grid.
     """
     # Convert gdf_farea_rd (GeoDataFrame) to correct CRS and get width, height based on desired resolution
     gdf_farea_rd = gdf_farea_rd.to_crs(crs)
-    direct_write = out_transform is not None and out_width is not None and out_height is not None
-    if direct_write:
-        transform = out_transform
-        width = int(out_width)
-        height = int(out_height)
-    else:
-        minx, miny, maxx, maxy = gdf_farea_rd.total_bounds
-        width = max(1, int((maxx - minx) / resolution))
-        height = max(1, int((maxy - miny) / resolution))
-        transform = from_bounds(minx, miny, maxx, maxy, width, height)
+    transform = out_transform
+    width = int(out_width)
+    height = int(out_height)
 
     start_time = gdf_farea_rd['t'].min() if start_time is None else start_time
     # If num_hours is given, use that to generate times; otherwise, calculate num_hours based on end_time
@@ -528,44 +474,24 @@ def rasterize_frp_and_save_as_tif(
 
     # Merge all rasters into a single array, and then a single TIF file
     stacked_array = np.stack(rasterized_bands)
-    if direct_write:
-        with rasterio.open(
-            out_tif,
-            'w',
-            driver='GTiff',
-            height=stacked_array.shape[1],
-            width=stacked_array.shape[2],
-            count=stacked_array.shape[0],  # number of bands
-            dtype=stacked_array.dtype,
-            crs=crs,
-            transform=transform
-        ) as dst:
-            for i in range(stacked_array.shape[0]):
-                dst.write(stacked_array[i], i + 1)  # rasterio bands are 1-based
-    else:
-        temp_tif_file = f'temp_rasterized_gdf_{uuid.uuid4()}.tif'
-        with rasterio.open(
-            temp_tif_file,
-            'w',
-            driver='GTiff',
-            height=stacked_array.shape[1],
-            width=stacked_array.shape[2],
-            count=stacked_array.shape[0],  # number of bands
-            dtype=stacked_array.dtype,
-            crs=crs,
-            transform=transform
-        ) as dst:
-            for i in range(stacked_array.shape[0]):
-                dst.write(stacked_array[i], i + 1)  # rasterio bands are 1-based
-
-        # Resample the tif to correct resolution in case the above procedure slightly shifts resolution
-        proc_util.resample_tif(temp_tif_file, out_tif, target_res=resolution)
-        os.remove(temp_tif_file)
+    with rasterio.open(
+        out_tif,
+        'w',
+        driver='GTiff',
+        height=stacked_array.shape[1],
+        width=stacked_array.shape[2],
+        count=stacked_array.shape[0],  # number of bands
+        dtype=stacked_array.dtype,
+        crs=crs,
+        transform=transform
+    ) as dst:
+        for i in range(stacked_array.shape[0]):
+            dst.write(stacked_array[i], i + 1)  # rasterio bands are 1-based
 
 
 def driver_frp(
     fid, final_bounds, res=300.0, fire_start=None, fire_end=None, num_hours=None, plot_orig=False, use_prev=False,
-    conv_delta=None, direct_to_final_grid=False
+    conv_delta=None
 ):
     """
     Driver function for obtaining, cropping, resampling, and plotting FRP data.
@@ -582,8 +508,6 @@ def driver_frp(
         plot_orig (bool, optional): True if FRP data should be plotted; False otherwise. Defaults to False.
         use_prev (bool, optional): Whether to use previous non-null data for rasterization if no data exists. Defaults to False.
         conv_delta (pandas.Timedelta, optional): Time delta to apply to FEDS data times for conversion from LST to UTC. Defaults to None.
-        direct_to_final_grid (bool, optional): True to rasterize directly to a canonical final grid
-         (A/B test mode); False for legacy rasterize+resample+pad flow. Defaults to False.
     """
     # Read FEDS2.5 MTBS fire area data for the given fire
     gdf_farea_rd, _, _ = read_1fire(fid) 
@@ -601,32 +525,21 @@ def driver_frp(
 
     final_out_tif = gen_util.get_output_data_filename(fid, var, gen_util.subdir_firespread)
 
-    if direct_to_final_grid:
-        final_transform, final_width, final_height = get_canonical_grid_from_bounds(final_bounds, res)
-        rasterize_frp_and_save_as_tif(
-            gdf_farea_rd,
-            df_fp,
-            out_tif=var_tif,
-            resolution=res,
-            start_time=fire_start,
-            end_time=fire_end,
-            num_hours=num_hours,
-            use_prev=use_prev,
-            conv_delta=conv_delta,
-            out_transform=final_transform,
-            out_width=final_width,
-            out_height=final_height
-        )
-        shutil.copyfile(var_tif, final_out_tif)
-    else:
-        # Save rasterized data to the temporary TIF file
-        rasterize_frp_and_save_as_tif(
-            gdf_farea_rd, df_fp, out_tif=var_tif, resolution=res, start_time=fire_start, end_time=fire_end,
-            num_hours=num_hours, use_prev=use_prev, conv_delta=conv_delta
-        )
-
-        # Add padding to the temporary TIF file based on the final_bounds argument
-        proc_util.pad_tif_to_bounds(var_tif, final_out_tif, final_bounds)
+    final_transform, final_width, final_height = get_canonical_grid_from_bounds(final_bounds, res)
+    rasterize_frp_and_save_as_tif(
+        gdf_farea_rd,
+        df_fp,
+        out_tif=var_tif,
+        start_time=fire_start,
+        end_time=fire_end,
+        num_hours=num_hours,
+        use_prev=use_prev,
+        conv_delta=conv_delta,
+        out_transform=final_transform,
+        out_width=final_width,
+        out_height=final_height
+    )
+    shutil.copyfile(var_tif, final_out_tif)
 
     # Plot FRP data if needed
     if plot_orig:
