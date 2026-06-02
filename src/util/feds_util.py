@@ -384,8 +384,8 @@ def get_gdf_firepix_t(df_fp, t, out_crs="epsg:4326"):
     """
     # Extract FRP data for the current time step
     df_fp_t = df_fp[(df_fp.t == t)]
-    # FRP density in MW/m^2
-    df_fp_t['FRPden'] = df_fp_t['FRP'] / (df_fp_t['DT'] * df_fp_t['DS']) / 1e4
+    # FRP density in W/m^2
+    df_fp_t['FRPden'] = df_fp_t['FRP'] / (df_fp_t['DT'] * df_fp_t['DS'])
 
     # Convert to GeoDataFrame in CRS EPSG:4326
     gdf_fp_t = gpd.GeoDataFrame(df_fp_t, geometry=gpd.points_from_xy(df_fp_t.Lon, df_fp_t.Lat, crs="epsg:4326"))
