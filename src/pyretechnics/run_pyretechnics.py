@@ -615,7 +615,7 @@ def spread_one_fire(args):
                                                          spread_state,
                                                          cube_resolution,
                                                          30,              #account for 30 min offset between VIIRS overpass and PyroStack layers
-                                                         timesteps * 60 - 30,
+                                                         timesteps * 60,
                                                          spot_config=spot_config,
                                                          surface_lw_ratio_model="rothermel",
                                                          cube_refresh_rates=cube_refresh_rates)
@@ -630,7 +630,7 @@ def spread_one_fire(args):
     spread_rate_matrix     = output_matrices["spread_rate"] # in m/s
     fireline_intensity_matrix = output_matrices["fireline_intensity"] # kW/m
     flame_length_matrix    = output_matrices["flame_length"] # how tall in m
-    time_of_arrival_matrix = output_matrices["time_of_arrival"]           # minutes
+    time_of_arrival_matrix = output_matrices["time_of_arrival"] - 30 # minutes (subtract out offset)
     np.divide(time_of_arrival_matrix, 60.0, out=time_of_arrival_matrix)   # hours
     
     # generate simple example plot
