@@ -1,22 +1,21 @@
-import os
-import sys
-import time
 import random
 
+import matplotlib
 import numpy as np
 import torch
-from torch.utils.data import Subset, DataLoader
+from torch.utils.data import DataLoader, Subset
 from torch.utils.data.distributed import DistributedSampler
+
+import yaml
 
 from ml.data import build_onestep_loader
 from ml.model import ViT
 
-import yaml
-import wandb
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from ml.sample import get_diffusion_samples
 
-# Caldor fire forced to be out of the training set
+
+# Caldor fire forced to be out of the training set.
 FORCED_TEST_EVENT_IDS = {"CA3858612053820210815"}
 
 
@@ -32,110 +31,9 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
 
 
-def plot_gt_vs_probs(prev_t, y, probs):
-    i = random.randint(0, y.shape[0] - 1)
-    prev = prev_t[i, 0].detach().cpu().numpy()
-    gt = y[i, 0].detach().cpu().numpy()
-    pr = probs[i, 0].detach().cpu().numpy()
-    fig, axes = plt.subplots(1, 3, figsize=(9, 3))
-    axes[0].imshow(prev, cmap="gray", vmin=0.0, vmax=1.0)
-    axes[0].set_title("prev timestep")
-    axes[0].axis("off")
-    axes[1].imshow(gt, cmap="gray", vmin=0.0, vmax=1.0)
-    axes[1].set_title("y (gt)")
-    axes[1].axis("off")
-    axes[2].imshow(pr, cmap="viridis", vmin=0.0, vmax=1.0)
-    axes[2].set_title("p(y=1)")
-    axes[2].axis("off")
-    return fig
-
-
-def plot_diffusion_visualization(prev_t, y, y_masked, probs, sample):
-    i = random.randint(0, y.shape[0] - 1)
-    prev = prev_t[i, 0].detach().cpu().numpy()
-    gt = y[i, 0].detach().cpu().numpy()
-    pr = probs[i, 0].detach().cpu().numpy()
-    smp = sample[i, 0].detach().cpu().numpy()
-
-    masked = y_masked[i, 0].detach().clone()
-    masked = torch.where(masked > 1.5, torch.full_like(masked, 0.5), masked)
-    masked = masked.cpu().numpy()
-
-    fig, axes = plt.subplots(1, 5, figsize=(15, 3))
-    axes[0].imshow(prev, cmap="gray", vmin=0.0, vmax=1.0)
-    axes[0].set_title("prev timestep")
-    axes[0].axis("off")
-    axes[1].imshow(gt, cmap="gray", vmin=0.0, vmax=1.0)
-    axes[1].set_title("y (gt)")
-    axes[1].axis("off")
-    axes[2].imshow(masked, cmap="gray", vmin=0.0, vmax=1.0)
-    axes[2].set_title("masked input")
-    axes[2].axis("off")
-    axes[3].imshow(pr, cmap="viridis", vmin=0.0, vmax=1.0)
-    axes[3].set_title("p(y=1)")
-    axes[3].axis("off")
-    axes[4].imshow(smp, cmap="gray", vmin=0.0, vmax=1.0)
-    axes[4].set_title("sample (scratch)")
-    axes[4].axis("off")
-    return fig
-
-
-def run_batch_ce(
-    step,
-    batch,
-    model,
-    optimizer,
-    wandb_run,
-    device,
-    log_every,
-    log_images_every,
-    training=True,
-    visualize=False,
-    sample_steps=32,
-    show_pred_vs_gt=True,
-    is_master=True,
-):
-    x = batch["x"].to(device, non_blocking=True)
-    y = batch["y"].to(device, non_blocking=True)
-    mask = batch.get("mask")
-    if mask is not None:
-        mask = mask.to(device, non_blocking=True).float()
-
-    logits = model(x, mask=mask) + x[:, 1].clamp(min=1e-3, max=1 - 1e-3).log().unsqueeze(1)
-    probs = torch.sigmoid(logits)
-    target = (y > 0.5).float()
-    per_pixel = torch.nn.functional.binary_cross_entropy(
-        probs, target, reduction="none"
-    )
-    if mask is not None:
-        loss = (per_pixel * mask).sum() / mask.sum().clamp_min(1.0)
-    else:
-        loss = per_pixel.mean()
-
-    split = "train" if training else "val"
-    if training:
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
-
-        if is_master and step % log_every == 0:
-            print(f"step {step} {split}_loss {loss.item():.6f}")
-
-    if is_master and wandb_run is not None:
-        wandb_run.log({f"{split}/loss": loss.item(), "step": step})
-        if show_pred_vs_gt and training and log_images_every > 0 and step % log_images_every == 0:
-            fig = plot_gt_vs_probs(x[:, 1:2], y, probs)
-            wandb_run.log({f"{split}/pred_vs_gt": wandb.Image(fig), "step": step})
-            plt.close(fig)
-
-    if training:
-        step += 1
-
-    return step
-
 def apply_diffusion_mask(t, y, mask):
     t = t.to(y.device).float()
-    pr = 1 - t[:, None, None, None]  # probability of being masked (linear schedule)
+    pr = 1 - t[:, None, None, None]
     samples_mask = torch.rand_like(y) < pr
     valid_mask = mask > 0
     diffusion_mask = (samples_mask & valid_mask).float()
@@ -144,93 +42,147 @@ def apply_diffusion_mask(t, y, mask):
     weight = 1.0 / torch.clamp_min(1 - pr, 1e-6)
     return y_masked, diffusion_mask, weight
 
+
+def _farea_channel_index(batch):
+    fire_vars = batch.get("fire_vars", [])
+    if "fire_spread/farea" in fire_vars:
+        return fire_vars.index("fire_spread/farea")
+    return 1 if len(fire_vars) > 1 else None
+
+
+def _add_persistence_prior(logits, x, batch):
+    farea_idx = _farea_channel_index(batch)
+    if farea_idx is None or farea_idx >= x.shape[1]:
+        return logits
+    prev_fire_area = x[:, farea_idx].clamp(min=1e-3, max=1 - 1e-3)
+    return logits + prev_fire_area.log().unsqueeze(1)
+
+
+def _diffusion_logits(model, x, y_masked, mask, batch):
+    masked_indicator = (y_masked > 1.5).float()
+    x_in = torch.cat([y_masked, masked_indicator, x], dim=1)
+    logits = model(x_in, mask=mask)
+    return _add_persistence_prior(logits, x, batch)
+
+
+def all_masked_probability_map(batch, model, device):
+    x = batch["x"].to(device, non_blocking=True)
+    y = batch["y"].to(device, non_blocking=True)
+    mask = batch["mask"].to(device, non_blocking=True).float()
+
+    y_masked = torch.full_like(y, 2.0)
+    y_masked = torch.where(mask > 0, y_masked, torch.zeros_like(y_masked))
+    logits = _diffusion_logits(model, x, y_masked, mask, batch)
+    return torch.sigmoid(logits), y_masked
+
+
+def plot_probability_map(batch, probs, y_masked):
+    i = random.randint(0, batch["y"].shape[0] - 1)
+    x = batch["x"]
+    y = batch["y"]
+    farea_idx = _farea_channel_index(batch)
+    if farea_idx is not None and farea_idx < x.shape[1]:
+        prev = x[i, farea_idx].detach().cpu().numpy()
+    else:
+        prev = np.zeros_like(y[i, 0].detach().cpu().numpy())
+    gt = y[i, 0].detach().cpu().numpy()
+    masked = y_masked[i, 0].detach().cpu().numpy()
+    pr = probs[i, 0].detach().cpu().numpy()
+
+    fig, axes = plt.subplots(1, 4, figsize=(12, 3))
+    axes[0].imshow(prev, cmap="gray", vmin=0.0, vmax=1.0)
+    axes[0].set_title("prev farea")
+    axes[0].axis("off")
+    axes[1].imshow(gt, cmap="gray", vmin=0.0, vmax=1.0)
+    axes[1].set_title("target")
+    axes[1].axis("off")
+    axes[2].imshow(masked, cmap="gray", vmin=0.0, vmax=2.0)
+    axes[2].set_title("all masked")
+    axes[2].axis("off")
+    axes[3].imshow(pr, cmap="viridis", vmin=0.0, vmax=1.0)
+    axes[3].set_title("p(farea=1)")
+    axes[3].axis("off")
+    fig.tight_layout()
+    return fig
+
+
 def run_batch_diffusion(
     step,
     batch,
     model,
     optimizer,
-    wandb_run,
     device,
-    log_every,
-    log_images_every,
     training=True,
     visualize=False,
-    sample_steps=512,
-    show_pred_vs_gt=True,
-    is_master=True,
+    grad_accum_steps=1,
+    accum_step_idx=0,
+    max_grad_norm=0.0,
 ):
     x = batch["x"].to(device, non_blocking=True)
     y = batch["y"].to(device, non_blocking=True)
     mask = batch["mask"].to(device, non_blocking=True).float()
 
-    t = torch.rand(y.shape[0])
-    y_masked, diffusion_mask, weight = apply_diffusion_mask(t, y, mask)
-
-    # Explicitly provide masked-token indicator as an additional input channel.
-    masked_indicator = (y_masked > 1.5).float()
-    x_in = torch.cat([y_masked, masked_indicator, x], dim=1)
-    logits = model(x_in, mask=mask) + x[:, 1].clamp(min=1e-3, max=1 - 1e-3).log().unsqueeze(1)
-    probs = torch.sigmoid(logits)
+    t = torch.rand(y.shape[0], device=device)
+    y_masked, diffusion_mask, _weight = apply_diffusion_mask(t, y, mask)
+    logits = _diffusion_logits(model, x, y_masked, mask, batch)
 
     target = (y > 0.5).float()
-    per_pixel = torch.nn.functional.binary_cross_entropy(
-        probs, target, reduction="none"
+    per_pixel = torch.nn.functional.binary_cross_entropy_with_logits(
+        logits, target, reduction="none"
     )
-
-    # diffusion loss, only computed on pixel with diffusion_mask
-    # per_pixel = weight * per_pixel * diffusion_mask
     per_pixel = per_pixel * diffusion_mask
-    if mask is not None:
-        loss = (per_pixel * mask).sum() / mask.sum().clamp_min(1.0)
-    else:
-        loss = per_pixel.mean()
+    loss = (per_pixel * mask).sum() / mask.sum().clamp_min(1.0)
 
-    split = "train" if training else "val"
-    if training:
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
-
-        if is_master and step % log_every == 0:
-            print(f"step {step} {split}_loss {loss.item():.6f}")
-
-    if is_master and wandb_run is not None:
-        wandb_run.log({f"{split}/loss": loss.item(), "step": step})
-        if visualize:
-            sample = get_diffusion_samples(
-                n_samples=1,
-                valid_mask=mask,
-                x=x,
-                model=model,
-                n_steps=sample_steps,
-                device=device,
-            )[:, 0]
-            fig = plot_diffusion_visualization(x[:, 1:2], y, y_masked, probs, sample)
-            wandb_run.log({f"{split}/diffusion_vis": wandb.Image(fig), "step": step})
-            plt.close(fig)
+    grad_accum_steps = max(1, int(grad_accum_steps))
+    accum_step_idx = int(accum_step_idx)
+    accum_start = (accum_step_idx % grad_accum_steps) == 0
+    accum_end = ((accum_step_idx + 1) % grad_accum_steps) == 0
+    optimizer_step = bool(training and accum_end)
 
     if training:
+        if accum_start:
+            optimizer.zero_grad(set_to_none=True)
+        (loss / grad_accum_steps).backward()
+        if accum_end:
+            grad_ok = True
+            if max_grad_norm and max_grad_norm > 0:
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_grad_norm, error_if_nonfinite=False
+                )
+                grad_ok = bool(torch.isfinite(grad_norm))
+            if grad_ok:
+                optimizer.step()
+            else:
+                optimizer.zero_grad(set_to_none=True)
+                optimizer_step = False
+
+    fig = None
+    if visualize:
+        probs, all_masked = all_masked_probability_map(batch, model, device)
+        fig = plot_probability_map(batch, probs.detach().cpu(), all_masked.detach().cpu())
+
+    if optimizer_step:
         step += 1
 
-    return step
+    return step, {
+        "loss": float(loss.detach().cpu().item()),
+        "optimizer_step": optimizer_step,
+        "figure": fig,
+    }
+
 
 def _dataset_event_name(dataset, idx):
-    # Frame-level dataset: index maps into dataset.sample_index -> event index.
     if hasattr(dataset, "sample_index") and hasattr(dataset, "base") and hasattr(dataset.base, "fire_events"):
         event_idx, _t = dataset.sample_index[idx]
         return dataset.base.fire_events[event_idx][0]
-    # OneStepDatasetSimple wraps GeoTiffDatasetStructured in `base`.
     if hasattr(dataset, "base") and hasattr(dataset.base, "fire_events"):
         return dataset.base.fire_events[idx][0]
-    # GeoTiffDatasetStructured exposes fire_events directly.
     if hasattr(dataset, "fire_events"):
         return dataset.fire_events[idx][0]
-    # Fallback (slower): load sample.
     return dataset[idx]["event_name"]
 
 
 def hardcoded_split(dataset, forced_test_ids=None):
-    # Train/val/test split (hardcoded seed + optional forced test event IDs)
     split_seed = 123
     val_frac = 0.1
     if forced_test_ids is None:
@@ -246,15 +198,15 @@ def hardcoded_split(dataset, forced_test_ids=None):
 
     test_idx = [i for i in indices if event_by_idx[i] in forced]
     remaining = [i for i in indices if event_by_idx[i] not in forced]
-
     remaining_events = sorted({event_by_idx[i] for i in remaining})
-
-    rng = random.Random(split_seed)
-    rng.shuffle(remaining_events)
 
     if len(remaining_events) == 0:
         return [], [], test_idx
+    if len(remaining_events) == 1:
+        return remaining, remaining, test_idx
 
+    rng = random.Random(split_seed)
+    rng.shuffle(remaining_events)
     n_val_events = max(1, int(len(remaining_events) * val_frac))
     val_events = set(remaining_events[:n_val_events])
     val_idx = [i for i in remaining if event_by_idx[i] in val_events]
@@ -276,9 +228,9 @@ def get_training_objects(
         batch_size=data_cfg.get("batch_size", 8),
         shuffle=bool(data_cfg.get("shuffle", True)),
         num_workers=int(data_cfg.get("num_workers", 0)),
-        out_type="flattened", # default for train and val
+        out_type="flattened",
         required_vars=data_cfg.get("required_vars"),
-        target_var=data_cfg.get("target_var", "fire_spread/nfp"),
+        target_var=data_cfg.get("target_var", "fire_spread/farea"),
         step_hours=int(data_cfg.get("step_hours", 12)),
         horizon_hours=int(data_cfg.get("horizon_hours", 12)),
         hourly_agg=data_cfg.get("hourly_agg", "concat"),
@@ -292,6 +244,8 @@ def get_training_objects(
     )
 
     train_idx, val_idx, _test_idx = hardcoded_split(dataset)
+    if len(train_idx) == 0:
+        raise RuntimeError("Training split is empty.")
 
     num_workers = int(data_cfg.get("num_workers", 0))
     pin_memory = bool(data_cfg.get("pin_memory", device.type == "cuda"))
@@ -347,15 +301,11 @@ def get_training_objects(
         in_ch += len(dataset.hourly_vars)
     else:
         in_ch += len(dataset.hourly_vars) * int(dataset.step)
-    
-    loss_type = train_cfg.get("loss_type", "diffusion")
-    if loss_type == "diffusion":
-        # diffusion takes noisy output + explicit masked indicator as input
-        in_ch = in_ch + 2
+    in_ch += 2
 
     model = ViT(
         in_ch=in_ch,
-        out_ch=int(model_cfg.get("out_ch", 2)),
+        out_ch=int(model_cfg.get("out_ch", 1)),
         patch=int(model_cfg.get("patch", 2)),
         dim=int(model_cfg.get("dim", 128)),
         depth=int(model_cfg.get("depth", 6)),

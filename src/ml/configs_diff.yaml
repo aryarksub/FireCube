@@ -1,10 +1,10 @@
 seed: 123
 
 data:
-  base_path: /extra/datalab_scratch0/firecube_data
-  batch_size: 32
+  base_path: output/cubes
+  batch_size: 4
   shuffle: true
-  num_workers: 2
+  num_workers: 8
   pin_memory: true
   persistent_workers: true
   prefetch_factor: 2
@@ -41,31 +41,28 @@ data:
     - veg_fm_topo/slpd
 
 model:
-  patch: 2
-  dim: 128
-  depth: 6
-  heads: 4
-  mlp_dim: 512
+  patch: 4
+  dim: 512
+  depth: 10
+  heads: 16
+  mlp_dim: 1024
   out_ch: 1
 
 train:
-  loss_type: diffusion
-  max_steps: 10000
-  val_every_steps: 50
-  max_val_batches: 10
-  val_visual_every: 1
+  run_dir: runs/diffusion
+  ckpt_dir: runs/diffusion/checkpoints
+  vis_dir: runs/diffusion/probability_maps
+  metrics_path: runs/diffusion/metrics.csv
+  grad_accum_steps: 4
+  max_grad_norm: 1.0
+  max_steps: 1000000
+  val_every_steps: 500
+  max_val_batches: 2
+  val_visual_every: 5
   lr: 0.0003
+  warmup_steps: 1000
+  warmup_start_lr: 0.000005
   weight_decay: 0.0000001
   device: cuda
-  log_every: 10
-  log_images_every: 100
-  sample_steps: 32
-  show_pred_vs_gt: false
+  log_every: 50
   ckpt_every_n_steps: 500
-  ckpt_dir: checkpoints
-
-wandb:
-  enabled: true
-  project: firecube
-  run_name: vit-diffusion
-  mode: online

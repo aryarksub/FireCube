@@ -127,12 +127,8 @@ def convert_era5_nc_to_tif(ds, fid, data_variables):
         data_variables (set): Set of ERA5 data variables/layers.
     """
     for var in data_variables:
-        da = ds[var]
-        lat, lon = ds['latitude'].values, ds['longitude'].values
-
-        # Flip data if lat is ascending
-        if lat[0] < lat[-1]:
-            da = da.sel(latitude=lat[::-1])
+        da = ds[var].sortby('latitude', ascending=False)
+        lat, lon = da['latitude'].values, ds['longitude'].values
 
         data = da.transpose("valid_time", "latitude", "longitude").values
 
@@ -177,7 +173,7 @@ def driver_era5(fid, vars, df_t, bounds, out_nc_file, plot_types=[]):
 
     # Download ERA5 data
     download_ERA5_reg(fid, df_t, bounds, vars, out_nc_file, redo=False)
-    ds = xr.open_dataset(gen_util.get_era5_nc_filename(fid), engine='netcdf4')
+    ds = xr.open_dataset(out_nc_file, engine='netcdf4')
     data_vars = get_data_vars_from_era5_dataset(ds)
     # Convert data for TIF files
     convert_era5_nc_to_tif(ds, fid, data_vars)
