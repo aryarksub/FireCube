@@ -78,7 +78,9 @@ def get_tif_spatial_properties(src):
 
 def check_band_count(layer_tif1, layer_tif2):
     """
-    Determine whether the band count of layer_tif2 is either 1 or equal to the band count of layer_tif1.
+    Determine whether the band count of layer_tif2 is either 1 or equal to the band count of layer_tif1. Due to changes
+    so that fire_spread layers are recorded every 12 hours, we also all band count of layer_tif1 to be either 4 or 5
+    less than the band count of layer_tif2 (assuming layer_tif1 is a fire_spread layer).
 
     Args:
         layer_tif1 (str): Path to the first TIF file.
@@ -86,7 +88,7 @@ def check_band_count(layer_tif1, layer_tif2):
 
     Returns:
         tuple: Tuple of (is_valid, tif1_band_count, tif2_band_count) where is_valid is a boolean indicating whether
-         the band counts are valid (i.e. either 1 or equal).
+         the band counts are valid (i.e. either 1 or equal or correct relative to hourly vs 12-hourly temporal difference).
     """
     with rasterio.open(layer_tif1) as src_tif1:
         tif1_band_count = src_tif1.count
@@ -94,7 +96,11 @@ def check_band_count(layer_tif1, layer_tif2):
         with rasterio.open(layer_tif2) as src_tif2:
             tif2_band_count = src_tif2.count
 
-            return tif2_band_count in {1, tif1_band_count}, tif1_band_count, tif2_band_count
+            return (
+                tif2_band_count in {1, tif1_band_count} or tif2_band_count // 12 - tif1_band_count in {4,5}, 
+                tif1_band_count, 
+                tif2_band_count
+            )
 
 def validate_one_fire_data(fid, layer_data_dict=None):
     """
