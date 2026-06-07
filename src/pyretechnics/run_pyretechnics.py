@@ -396,7 +396,7 @@ def load_and_transform_rasters(args, band_slice):
 
 def make_simple_plot(args, pre_burn, ignition, toa_matrix, gpkg_path):
     # retrieve fire name
-    firelist = pd.read_csv(os.path.join(args.pyrostack_path, "inputData", "fireslist2012-2024.csv"))
+    firelist = pd.read_csv(os.path.join(args.pyrostack_path, "inputData", "fireslist2012-2024_withtype_no_fline_hawaii.csv"))
     firename = firelist.loc[firelist[firelist["Event_ID"] == args.fid].index[0]]["Incid_Name"]
     sup_title = f"{firename} (ID: {args.fid})"
 
