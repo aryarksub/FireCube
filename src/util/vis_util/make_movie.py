@@ -835,16 +835,16 @@ def make_movies(fid: str):
     print(f"Out:  {movies_dir}")
 
     # A) Three movies over DEM
-    #make_trio_over_dem(fid, df, local2utc, utc2local, movies_dir, fire_name, cube_dirs)
+    make_trio_over_dem(fid, df, local2utc, utc2local, movies_dir, fire_name, cube_dirs)
 
     # B) Combined DEM movie
     make_combo_over_dem(fid, df, local2utc, utc2local, movies_dir, fire_name, cube_dirs)
 
     # C) Three movies over EVT (auto-discovered)
-    #make_trio_over_evt(fid, df, local2utc, utc2local, movies_dir, fire_name, cube_dirs)
+    make_trio_over_evt(fid, df, local2utc, utc2local, movies_dir, fire_name, cube_dirs)
 
     # D) Combined EVT movie (auto-discovered)
-    #make_combo_over_evt(fid, df, local2utc, utc2local, movies_dir, fire_name, cube_dirs)
+    make_combo_over_evt(fid, df, local2utc, utc2local, movies_dir, fire_name, cube_dirs)
 
 # CLI
 if __name__ == "__main__":
