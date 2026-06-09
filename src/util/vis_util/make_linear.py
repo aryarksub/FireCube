@@ -17,21 +17,17 @@ import general_util as gen_util
 LABELS = {
     # fire_spread
     "fline":"Active fire line",
-    "fperim":"Fire perimeter",
+    "farea":"Fire perimeter",
     "nfp":"New fire pixels",
+    "frp_density":"Fire radiative power density (MW m⁻²)",
+    "frp_total_mw":"Total fire radiative power (MW)",
+    "frp_on_fline_mw":"FRP on active fire line (MW)",
 
-    # fuel_topo
-    "adj":"Surface spread rate adjustment",
-    "asp":"Topographic aspect (°)",
-    "cbd":"Canopy bulk density (×100 kg m⁻³)",
-    "cbh":"Canopy base height (×10 m)",
-    "cc":"Canopy cover (%)",
-    "ch":"Canopy height (×10 m)",
-    "dem":"Digital elevation model (m)",
-    "fbfm40":"Fire behavior fuel model",
-    "ignition_mask":"Ignition mask",
-    "phi":"Initial φ (level set variable)",
-    "slp":"Topographic slope (°)",
+    # low_res_climate
+    "d2m":"2-m dew-point temperature (°C)",
+    "sp":"Surface pressure (Pa)",
+    "t2m":"2-m temperature (°C)",
+    "tp":"Total precipitation (mm)",
 
     # high_res_climate
     "lh":"Live herbaceous fuel moisture (%)",
@@ -41,25 +37,20 @@ LABELS = {
     "m100":"100-h dead fuel moisture (%)",
     "wd":"20-ft wind direction (°)",
     "ws":"20-ft wind speed (mph)",
+    
+    # fuel_structure
+    "cbd":"Canopy bulk density (×100 kg m⁻³)",
+    "cbh":"Canopy base height (×10 m)",
+    "cc":"Canopy cover (%)",
+    "ch":"Canopy height (×10 m)",
 
-    # FRP (values are in CSV as given)
-    "frp_density":"Fire radiative power density (MW m⁻²)",
-    "frp_total_mw":"Total fire radiative power (MW)",
-    "frp_on_fline_mw":"FRP on active fire line (MW)",
-
-    # landfire
-    "200evt":"Existing Vegetation Type",
-    "200f13_20":"13 Anderson Fire Behavior Fuel Models 2020",
-    "200f40_20":"40 Scott and Burgan Fire Behavior Fuel Models 2020",
-    "asp2020":"Topographic Aspect (°)",
-    "elev2020":"Topographic Elevation (m)",
-    "slpd2020":"Topographic Slope Degrees (°)",
-
-    # low_res_climate
-    "d2m":"2-m dew-point temperature (°C)",
-    "sp":"Surface pressure (Pa)",
-    "t2m":"2-m temperature (°C)",
-    "tp":"Total precipitation (mm)",
+    # veg_fm_topo
+    "evt":"Existing Vegetation Type",
+    "fbfm13":"13 Anderson Fire Behavior Fuel Models 2020",
+    "fbfm40":"40 Scott and Burgan Fire Behavior Fuel Models 2020",
+    "asp":"Topographic Aspect (°)",
+    "elev":"Topographic Elevation (m)",
+    "slpd":"Topographic Slope Degrees (°)",
 
     # derived
     "vpd":"Vapor-pressure deficit (kPa)",
@@ -69,8 +60,8 @@ LABELS = {
 
 FEDS_VARS = ("fline","fperim","nfp")
 SKIP_ALWAYS = {
-    "UTC","Local","fline","fperim","nfp",
-    "fline_area_km2","fperim_area_km2","nfp_area_km2"
+    "UTC","Local","fline","farea","nfp",
+    "fline_area_km2","farea_area_km2","nfp_area_km2"
 }
 
 def _slugify(name: str) -> str:

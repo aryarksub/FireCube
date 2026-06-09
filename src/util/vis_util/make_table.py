@@ -10,16 +10,6 @@ import sys
 import os
 from typing import Optional
 
-# Optional timezone libs (script still works without them via fixed-offset fallback)
-try:
-    from timezonefinder import TimezoneFinder
-    import pytz
-    _TZF = TimezoneFinder()
-except Exception:
-    _TZF = None
-    pytz = None
-    warnings.filterwarnings("ignore")
-
 # Allow `import feds_util` etc. from the parent of vis_util
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -29,30 +19,26 @@ import processing_util as proc_util
 
 # Heuristics for mapping variable stems to subfolders
 SUBFOLDER_HINT = {
-    "fline": "fire_spread", "fperim": "fire_spread", "nfp": "fire_spread",
-    "frp": "frp",
+    "fline": "fire_spread", "farea": "fire_spread", "nfp": "fire_spread", "frp": "fire_spread",
     "lh": "high_res_climate", "lw": "high_res_climate",
     "m1": "high_res_climate", "m10": "high_res_climate", "m100": "high_res_climate",
     "wd": "high_res_climate", "ws": "high_res_climate",
     "d2m": "low_res_climate", "sp": "low_res_climate",
     "t2m": "low_res_climate", "tp": "low_res_climate",
-    "adj": "fuel_topo", "asp": "fuel_topo", "cbd": "fuel_topo", "cbh": "fuel_topo",
-    "cc": "fuel_topo", "ch": "fuel_topo", "dem": "fuel_topo", "fbfm40": "fuel_topo",
-    "ignition_mask": "fuel_topo", "phi": "fuel_topo", "slp": "fuel_topo",
-    "200evt": "landfire", "200f13_20": "landfire", "200f40_20": "landfire",
-    "asp2020": "landfire", "elev2020": "landfire", "slpd2020": "landfire",
+    "cbd": "fuel_structure", "cbh": "fuel_structure", 
+    "ch": "fuel_structure", "cc": "fuel_structure",
+    "evt": "veg_fm_topo", "f13": "veg_fm_topo", "f40": "veg_fm_topo",
+    "asp": "veg_fm_topo", "elev": "veg_fm_topo", "slpd": "veg_fm_topo",
 }
 
 # Folders scanned to auto-discover available rasters
 SCAN_SUBFOLDERS = [
     "fire_spread",
-    "frp",
     "high_res_climate",
     "low_res_climate",
-    "fuel_topo",
-    "landfire",
+    "fuel_structure",
+    "veg_fm_topo",
 ]
-
 
 def _slugify(name: str) -> str:
     """
@@ -95,7 +81,7 @@ def _mean_rh(temp_c, dew_c):
 
 
 def _mean_elevation_series(fline_tif: Path, dem_tif: Path,
-                           start_time_utc: pd.Timestamp, freq="h") -> pd.Series:
+                           fire_times: pd.Series, freq="h") -> pd.Series:
     """
     Mean elevation (m) over active fireline pixels for each FEDS band.
     """
@@ -113,51 +99,8 @@ def _mean_elevation_series(fline_tif: Path, dem_tif: Path,
             for i in range(1, fsrc.count + 1):
                 mask = fsrc.read(i) > 0  # active fireline
                 vals.append(nanmean(dem[mask]) if mask.any() else np.nan)
-    idx = pd.date_range(start_time_utc, periods=len(vals), freq=freq, tz="UTC")
-    return pd.Series(vals, index=idx)
-
-
-def _timezone_of(lat: float, lon: float):
-    """
-    Best-effort local timezone (pytz if available; else fixed offset by longitude).
-    """
-    if _TZF is not None and pytz is not None:
-        try:
-            tzname = _TZF.timezone_at(lat=lat, lng=lon)
-            if tzname:
-                return pytz.timezone(tzname)
-        except Exception:
-            pass
-    hours = int(round(lon / 15.0))
-
-    class _Fixed:
-        def __init__(self, h): self._h = h
-        def utcoffset(self, _): return pd.Timedelta(hours=self._h)
-        def tzname(self, _): return f"UTC{self._h:+d}"
-
-    return _Fixed(hours)
-
-
-def _local_series_to_utc(s: pd.Series, tz_local):
-    """
-    Convert naive/local times to timezone-aware UTC times.
-    """
-    s = pd.to_datetime(s)
-    if pytz is not None and hasattr(tz_local, "localize"):
-        if getattr(s.dt, "tz", None) is not None:
-            return s.dt.tz_convert("UTC")
-        return s.dt.tz_localize(tz_local, ambiguous="infer", nonexistent="shift_forward").dt.tz_convert("UTC")
-    # Fallback: fixed offset shift
-    offset = tz_local.utcoffset(None)
-    return (s - offset).dt.tz_localize("UTC")
-
-
-def _has_time_token(s: str) -> bool:
-    """
-    Heuristic: detect hh:mm or AM/PM in a human-entered string.
-    """
-    s = str(s).strip().lower()
-    return (":" in s) or ("am" in s) or ("pm" in s)
+    
+    return pd.Series(vals, index=fire_times)
 
 
 def _extract_firelist_window(row: pd.Series):
@@ -191,7 +134,7 @@ def _extract_firelist_window(row: pd.Series):
 
 
 def _frp_series(cubes_dir: Path,
-                fire_start_utc: pd.Timestamp) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+                fire_times_feds: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     FRP time series (density, total, restricted to fireline).
     """
@@ -243,17 +186,14 @@ def _frp_series(cubes_dir: Path,
             on_fline_vals.append(on_fline)
             dens_on_fline_vals.append(dens_on_fline)
 
-        # FRP bands are hourly aligned; anchor to FEDS start + 30 min
-        start = fire_start_utc.floor("h") + pd.Timedelta(minutes=30)
-        idx = pd.date_range(start, periods=nb, freq="h", tz="UTC")
         if fline_vrt is not None:
             fline_vrt.close()
             fsrc.close()
 
-        s_dens    = pd.Series(dens_vals, index=idx, name="frp_density")
-        s_tot     = pd.Series(total_vals, index=idx, name="frp_total")
-        s_fl      = pd.Series(on_fline_vals, index=idx, name="frp_on_fline")
-        s_dens_fl = pd.Series(dens_on_fline_vals, index=idx, name="frp_density_on_fline")
+        s_dens    = pd.Series(dens_vals, index=fire_times_feds, name="frp_density")
+        s_tot     = pd.Series(total_vals, index=fire_times_feds, name="frp_total")
+        s_fl      = pd.Series(on_fline_vals, index=fire_times_feds, name="frp_on_fline")
+        s_dens_fl = pd.Series(dens_on_fline_vals, index=fire_times_feds, name="frp_density_on_fline")
         return s_dens, s_tot, s_fl, s_dens_fl
 
 
@@ -277,7 +217,7 @@ def _circular_mean_deg(deg_array, weights=None):
     return ang
 
 
-def _wind_series(cubes_dir: Path, grid_start_utc: pd.Timestamp) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+def _wind_series(cubes_dir: Path, fire_times: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Vector-averaged wind: compute u,v per band then aggregate to ws_mean, wd_mean.
     u_mean/v_mean stay available for vector plots or diagnostics.
@@ -319,12 +259,11 @@ def _wind_series(cubes_dir: Path, grid_start_utc: pd.Timestamp) -> tuple[pd.Seri
             ws_vals.append(ws_mean)
             wd_vals.append(wd_mean)
 
-    idx = pd.date_range(grid_start_utc, periods=len(ws_vals), freq="h", tz="UTC")
     return (
-        pd.Series(u_vals,  index=idx, name="u_mean"),
-        pd.Series(v_vals,  index=idx, name="v_mean"),
-        pd.Series(ws_vals, index=idx, name="ws_mean"),
-        pd.Series(wd_vals, index=idx, name="wd_mean"),
+        pd.Series(u_vals,  index=fire_times, name="u_mean"),
+        pd.Series(v_vals,  index=fire_times, name="v_mean"),
+        pd.Series(ws_vals, index=fire_times, name="ws_mean"),
+        pd.Series(wd_vals, index=fire_times, name="wd_mean"),
     )
 
 
@@ -345,6 +284,22 @@ def _aspect_circ_mean_from(tif_path: Path) -> Optional[float]:
             return None
         return float(np.nanmean(band_means))
 
+def _get_generic_variable_name(var):
+    if ('f40' in var or 'fm40' in var):
+        return 'fbfm40'
+    if ('f13' in var or 'fm13' in var):
+        return 'fbfm13'
+    if 'evt' in var:
+        return 'evt'
+    if 'roads' in var:
+        return 'roads'
+    if 'asp' in var:
+        return 'asp'
+    if 'slpd' in var:
+        return 'slpd'
+    if 'elev' in var:
+        return 'elev'
+    return var
 
 def build_table(fid: str) -> Path:
     """
@@ -352,7 +307,7 @@ def build_table(fid: str) -> Path:
       - FEDS footprints & areas,
       - FRP series (overall and restricted to fireline),
       - Vector-averaged wind (u_mean, v_mean, ws_mean, wd_mean),
-      - Circular-mean aspects per source (asp, asp2020),
+      - Circular-mean aspects per source (asp),
       - Common derived vars (VPD, mean RH), and
       - Elevation over active fireline.
 
@@ -364,51 +319,25 @@ def build_table(fid: str) -> Path:
     fire_name_slug = _slugify(fire_name_raw)
     center_lat = float((row.get("lat0") + row.get("lat1")) / 2.0)
     center_lon = float((row.get("lon0") + row.get("lon1")) / 2.0)
-    tz_local = _timezone_of(center_lat, center_lon)
-
-    s_local, e_local, used_cols, s_raw, e_raw = _extract_firelist_window(row)
-    if s_local is None:
-        gdf_fperim_rd, _, _ = feds_util.read_1fire(fid)
-        if gdf_fperim_rd is None:
-            raise FileNotFoundError(f"FEDS file for fire {fid} does not exist and firelist has no times.")
-        times_local = pd.to_datetime(gdf_fperim_rd.t)
-        local_buf = proc_util.add_time_buffers(times_local)
-        buf_min_local, buf_max_local = local_buf.min(), local_buf.max()
-        fire_start_utc, fire_end_utc = _local_series_to_utc(
-            pd.Series([buf_min_local, buf_max_local]), tz_local
-        )
-    else:
-        local_buf = proc_util.add_time_buffers(pd.Series([s_local, e_local]))
-        buf_min_local, buf_max_local = local_buf.min(), local_buf.max()
-        fire_start_utc, fire_end_utc = _local_series_to_utc(
-            pd.Series([buf_min_local, buf_max_local]), tz_local
-        )
 
     cubes_dir = Path(gen_util.dir_output) / gen_util.dir_cubes / fid
 
-    # Ensure timeline covers full FEDS fireline stack if present
-    fline_tif = cubes_dir / "fire_spread" / "fline.tif"
-    if fline_tif.exists():
-        with rasterio.open(fline_tif) as ds:
-            n_fline = ds.count
-        fline_start = fire_start_utc.floor("h") + pd.Timedelta(minutes=30)
-        last_needed = fline_start + pd.Timedelta(hours=n_fline - 1)
-        if last_needed > fire_end_utc:
-            fire_end_utc = last_needed
+    fire_times_csv = cubes_dir / "fire_times.csv"
+    fire_times_df = pd.read_csv(fire_times_csv, parse_dates=['time'])
+    fire_times = fire_times_df['time'].dt.tz_localize('UTC')
+    fire_times_feds = fire_times[fire_times_df['feds']]
 
-    grid_start_utc = fire_start_utc.floor("D")
-    grid_end_utc   = fire_end_utc.ceil("30min")
+    grid_start_utc = fire_times.min()
+    grid_end_utc   = fire_times.max()
 
     dir_suffix = f"{fid}_{fire_name_slug}" if fire_name_slug else fid
     out_dir = Path(gen_util.dir_output) / "sum_vis" / dir_suffix
     out_dir.mkdir(parents=True, exist_ok=True)
     out_csv = out_dir / f"data_table_{dir_suffix}.csv"
 
-    full_utc = pd.date_range(grid_start_utc, grid_end_utc, freq="30min", tz="UTC")
-    if pytz is not None and hasattr(tz_local, "localize"):
-        full_local = [pd.Timestamp(t).tz_convert(tz_local).tz_localize(None) for t in full_utc]
-    else:
-        full_local = [(pd.Timestamp(t) + tz_local.utcoffset(None)).tz_localize(None) for t in full_utc]
+    full_utc = pd.date_range(grid_start_utc, grid_end_utc, freq="h", tz="UTC")
+    conversion_delta = pd.to_timedelta(round(center_lon / 15), unit="hours")
+    full_local = (full_utc + conversion_delta).tz_localize(None)
     df = pd.DataFrame({"UTC": full_utc, "Local": full_local}, index=full_utc)
 
     # Discover available rasters
@@ -423,7 +352,7 @@ def build_table(fid: str) -> Path:
             discovered[var] = folder
 
     # Ensure canonical keys are considered even if not discovered by glob order
-    for k in ["fline", "fperim", "nfp", "frp"]:
+    for k in ["fline", "farea", "nfp", "frp"]:
         folder = SUBFOLDER_HINT.get(k)
         if folder and (cubes_dir / folder / f"{k}.tif").exists():
             discovered[k] = folder
@@ -438,17 +367,15 @@ def build_table(fid: str) -> Path:
         bands, pix_km2, nodata, _, _, _, _ = _read_tif_bands(tif)
         n = len(bands)
 
-        # FEDS stacks are hourly, aligned to start+30min
-        if var in {"fline", "fperim", "nfp"}:
-            start = fire_start_utc.floor("h") + pd.Timedelta(minutes=30)
-            idx = pd.date_range(start, periods=n, freq="h", tz="UTC")
+        # FEDS stacks are aligned with the FEDS fire times
+        if var in ['fline', 'farea', 'nfp']:
             pix = []
             for b in bands:
                 if nodata is not None:
                     b = np.where(b == nodata, 0, b)
                 pix.append((b > 0).sum())
             area = [p * pix_km2 for p in pix]
-            return pd.Series(pix, index=idx), pd.Series(area, index=idx)
+            return pd.Series(pix, index=fire_times_feds), pd.Series(area, index=fire_times_feds)
 
         # Generic numeric mean per band
         vals = []
@@ -465,18 +392,16 @@ def build_table(fid: str) -> Path:
             vals = [v * 100.0 * 10.0 if v is not None and not np.isnan(v) else v for v in vals]  # m→mm
 
         # One-band static rasters → broadcast a single value across the timeline
-        is_static = (folder in {"fuel_topo", "landfire"}) or (n == 1)
+        is_static = (folder in {"fuel_structure", "veg_fm_topo"}) or (n == 1)
         if is_static:
             value = float(vals[0]) if len(vals) else np.nan
-            s_single = pd.Series([value], index=[df.index[0]])
-            return s_single.reindex(df.index), None
+            s_single = pd.Series([value], index=[fire_times[0]])
+            return s_single.reindex(fire_times), None
 
-        start = grid_start_utc
-        idx = pd.date_range(start, periods=n, freq="h", tz="UTC")
-        return pd.Series(vals, index=idx), None
+        return pd.Series(vals, index=fire_times), None
 
     # FEDS counts/areas
-    for var in ("fline", "fperim", "nfp"):
+    for var in ("fline", "farea", "nfp"):
         if discovered.get(var) == "fire_spread":
             s, s_area = _series_from_stack(var, "fire_spread")
             if s is not None:
@@ -485,7 +410,7 @@ def build_table(fid: str) -> Path:
                 df[f"{var}_area_km2"] = s_area.reindex(df.index)
 
     # FRP series
-    s_frp_dens, s_frp_tot, s_frp_fline, s_frp_dens_fline = _frp_series(cubes_dir, fire_start_utc)
+    s_frp_dens, s_frp_tot, s_frp_fline, s_frp_dens_fline = _frp_series(cubes_dir, fire_times_feds)
     if s_frp_dens is not None:
         df["frp_density"] = s_frp_dens.reindex(df.index)                # MW/m²
     if s_frp_tot is not None:
@@ -496,7 +421,7 @@ def build_table(fid: str) -> Path:
         df["frp_density_on_fline"] = s_frp_dens_fline.reindex(df.index) # MW/m²
 
     # Vector-averaged wind (also keeps components for plots/debug)
-    u_s, v_s, ws_s, wd_s = _wind_series(cubes_dir, grid_start_utc)
+    u_s, v_s, ws_s, wd_s = _wind_series(cubes_dir, fire_times)
     if u_s is not None:
         df["u_mean"]  = u_s.reindex(df.index)       # m/s, +east
         df["v_mean"]  = v_s.reindex(df.index)       # m/s, +north
@@ -504,28 +429,24 @@ def build_table(fid: str) -> Path:
         df["wd_mean"] = wd_s.reindex(df.index)      # deg (FROM)
 
     # Circular-mean aspects per source
-    asp_fp     = cubes_dir / "fuel_topo" / "asp.tif"
-    asp2020_fp = cubes_dir / "landfire"  / "asp2020.tif"
+    asp_fp     = cubes_dir / "veg_fm_topo" / "asp2020.tif"
 
     asp_deg = _aspect_circ_mean_from(asp_fp)
     if asp_deg is not None:
         df["asp"] = pd.Series([asp_deg], index=[df.index[0]]).reindex(df.index)
 
-    asp2020_deg = _aspect_circ_mean_from(asp2020_fp)
-    if asp2020_deg is not None:
-        df["asp2020"] = pd.Series([asp2020_deg], index=[df.index[0]]).reindex(df.index)
-
     # Generic ingestion for everything else
     # Skip those handled specially above to avoid duplicates/overwrite.
-    skip_vars = {"fline", "fperim", "nfp", "frp", "ws", "wd", "asp", "asp2020"}
+    skip_vars = {"fline", "farea", "nfp", "frp", "ws", "wd", "asp2020"}
     for var, folder in discovered.items():
         if var in skip_vars:
             continue
         s, s_area = _series_from_stack(var, folder)
+        var_name = _get_generic_variable_name(var)
         if s is not None:
-            df[var] = s.reindex(df.index)
+            df[var_name] = s.reindex(df.index)
         if s_area is not None:
-            df[f"{var}_area_km2"] = s_area.reindex(df.index)
+            df[f"{var_name}_area_km2"] = s_area.reindex(df.index)
 
     # Derived variables from climate
     if {"t2m", "d2m"}.issubset(df.columns):
@@ -533,29 +454,29 @@ def build_table(fid: str) -> Path:
         df["mean_rh"] = _mean_rh(df["t2m"], df["d2m"])
 
     # Elevation along fireline over time
-    dem_tif = cubes_dir / "fuel_topo" / "dem.tif"
+    fline_tif = cubes_dir / "fire_spread" / "fline.tif"
+    dem_tif = cubes_dir / "veg_fm_topo" / "elev2020.tif"
     if fline_tif.exists() and dem_tif.exists():
-        fline_start_for_elev = fire_start_utc.floor("h") + pd.Timedelta(minutes=30)
         df["fline_mean_elev_m"] = _mean_elevation_series(
-            fline_tif, dem_tif, fline_start_for_elev
+            fline_tif, dem_tif, fire_times_feds
         ).reindex(df.index)
 
     # Column ordering (cosmetic)
     static_vars, dynamic_vars = [], []
     for var, folder in discovered.items():
-        if var in {"fline", "fperim", "nfp"} or var == "frp":
+        if var in {"fline", "farea", "nfp"} or var == "frp":
             continue
         tif = cubes_dir / folder / f"{var}.tif"
         if tif.exists():
             try:
                 with rasterio.open(tif) as ds:
-                    is_static = (folder in {"fuel_topo", "landfire"}) or (ds.count == 1)
+                    is_static = (folder in {"veg_fm_topo", "fuel_structure"}) or (ds.count == 1)
             except Exception:
-                is_static = (folder in {"fuel_topo", "landfire"})
+                is_static = (folder in {"veg_fm_topo", "fuel_structure"})
             (static_vars if is_static else dynamic_vars).append(var)
 
-    feds_area_cols = [c for c in (f"{v}_area_km2" for v in ("fline","fperim","nfp")) if c in df.columns]
-    feds_count_cols = [c for c in ("fline","fperim","nfp") if c in df.columns]
+    feds_area_cols = [c for c in (f"{v}_area_km2" for v in ("fline","farea","nfp")) if c in df.columns]
+    feds_count_cols = [c for c in ("fline","farea","nfp") if c in df.columns]
     frp_cols = [c for c in ("frp_density","frp_total","frp_on_fline","frp_density_on_fline") if c in df.columns]
     wind_cols = [c for c in ("u_mean","v_mean","ws_mean","wd_mean") if c in df.columns]
 

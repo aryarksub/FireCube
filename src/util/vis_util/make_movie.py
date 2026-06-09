@@ -127,7 +127,7 @@ def _cube_dirs_for_fid(fid: str):
         "root": root,
         "fuel_topo": root / "fuel_topo",
         "fire_spread": root / "fire_spread",
-        "landfire": root / "landfire",
+        "veg_fm_topo": root / "veg_fm_topo",
     }
 
 def _ensure_movies_dir(sum_vis_dir: Path):
@@ -181,7 +181,7 @@ def _find_evt_raster(landfire_dir: Path) -> tuple[Path, str]:
         raise FileNotFoundError(f"landfire dir not found: {landfire_dir}")
 
     # 1) exact
-    p = landfire_dir / "200evt.tif"
+    p = landfire_dir / "evt.tif"
     if p.exists():
         return p, p.stem
 
@@ -243,11 +243,11 @@ def _secondary_time_axis(ax, local2utc, utc2local, lo_local, hi_local):
 
 def make_trio_over_dem(fid: str, df: pd.DataFrame, local2utc, utc2local,
                        movies_dir: Path, fire_name: str, cube_dirs: dict):
-    dem_path = cube_dirs["fuel_topo"] / "dem.tif"
+    dem_path = cube_dirs["veg_fm_topo"] / "elev2020.tif"
     spread_dir = cube_dirs["fire_spread"]
     fpaths = {
         "fline":  spread_dir / "fline.tif",
-        "fperim": spread_dir / "fperim.tif",
+        "farea": spread_dir / "farea.tif",
         "nfp":    spread_dir / "nfp.tif",
     }
     if not dem_path.exists():
@@ -357,7 +357,7 @@ def make_trio_over_dem(fid: str, df: pd.DataFrame, local2utc, utc2local,
 
 def make_trio_over_evt(fid: str, df: pd.DataFrame, local2utc, utc2local,
                        movies_dir: Path, fire_name: str, cube_dirs: dict):
-    landfire_dir = cube_dirs["landfire"]
+    landfire_dir = cube_dirs["veg_fm_topo"]
     try:
         evt_path, evt_stem = _find_evt_raster(landfire_dir)
     except FileNotFoundError as e:
@@ -368,7 +368,7 @@ def make_trio_over_evt(fid: str, df: pd.DataFrame, local2utc, utc2local,
     spread_dir = cube_dirs["fire_spread"]
     fpaths = {
         "fline":  spread_dir / "fline.tif",
-        "fperim": spread_dir / "fperim.tif",
+        "farea": spread_dir / "farea.tif",
         "nfp":    spread_dir / "nfp.tif",
     }
 
@@ -510,7 +510,7 @@ def make_trio_over_evt(fid: str, df: pd.DataFrame, local2utc, utc2local,
 
 def make_combo_over_evt(fid: str, df: pd.DataFrame, local2utc, utc2local,
                         movies_dir: Path, fire_name: str, cube_dirs: dict):
-    landfire_dir = cube_dirs["landfire"]
+    landfire_dir = cube_dirs["veg_fm_topo"]
     try:
         evt_path, evt_stem = _find_evt_raster(landfire_dir)
     except FileNotFoundError as e:
@@ -520,10 +520,10 @@ def make_combo_over_evt(fid: str, df: pd.DataFrame, local2utc, utc2local,
     xwalk_csv = _find_evt_crosswalk()
     spread_dir = cube_dirs["fire_spread"]
     fline_path = spread_dir / "fline.tif"
-    fperim_path = spread_dir / "fperim.tif"
+    fperim_path = spread_dir / "farea.tif"
 
     if not (evt_path.exists() and fline_path.exists() and fperim_path.exists()):
-        print("[skip] combo EVT: missing one of EVT/fline/fperim rasters")
+        print("[skip] combo EVT: missing one of EVT/fline/farea rasters")
         return
 
     with rasterio.open(evt_path) as ds_evt:
@@ -553,10 +553,10 @@ def make_combo_over_evt(fid: str, df: pd.DataFrame, local2utc, utc2local,
         d = df[cols].dropna(subset=[var]).copy()
         return d, area_col
 
-    dfp_fp, area_fp = prep_df("fperim")
+    dfp_fp, area_fp = prep_df("farea")
     dfp_fl, area_fl = prep_df("fline")
     if dfp_fp.empty and dfp_fl.empty:
-        print("[skip] combo EVT: both fperim and fline time series empty")
+        print("[skip] combo EVT: both farea and fline time series empty")
         fline_ds.close(); fperim_ds.close()
         return
 
@@ -606,10 +606,10 @@ def make_combo_over_evt(fid: str, df: pd.DataFrame, local2utc, utc2local,
     # fperim TS
     if not dfp_fp.empty:
         ax_fp.set_axisbelow(True); ax_fp.grid(True, linestyle=":", alpha=0.4, zorder=0)
-        ax_fp.step(dfp_fp["Local"], dfp_fp["fperim"], where="post", linewidth=2.0, zorder=3)
-        vc = dfp_fp["fperim"].ne(dfp_fp["fperim"].shift())
-        ax_fp.scatter(dfp_fp.loc[vc, "Local"], dfp_fp.loc[vc, "fperim"], color="black", zorder=4, s=30)
-        k_fp = infer_km2_per_pixel(dfp_fp, "fperim", area_fp, evt_dx, evt_dy)
+        ax_fp.step(dfp_fp["Local"], dfp_fp["farea"], where="post", linewidth=2.0, zorder=3)
+        vc = dfp_fp["farea"].ne(dfp_fp["farea"].shift())
+        ax_fp.scatter(dfp_fp.loc[vc, "Local"], dfp_fp.loc[vc, "farea"], color="black", zorder=4, s=30)
+        k_fp = infer_km2_per_pixel(dfp_fp, "farea", area_fp, evt_dx, evt_dy)
         if k_fp and np.isfinite(k_fp) and k_fp > 0:
             y2 = ax_fp.secondary_yaxis('right', functions=(lambda y: y * k_fp, lambda y: y / k_fp))
             y2.set_ylabel("Area (km²)", labelpad=8)
@@ -621,7 +621,7 @@ def make_combo_over_evt(fid: str, df: pd.DataFrame, local2utc, utc2local,
         sL, eL = dfp_fp["Local"].iloc[[0, -1]]
         ax_fp.set_xlabel(f"Local — {sL:%b %d %H:%M} → {eL:%b %d %H:%M}", labelpad=8)
         ax_fp.set_ylabel("Number of pixels", labelpad=6)
-        ax_fp.set_title(f"{fire_name} – fperim", pad=8)
+        ax_fp.set_title(f"{fire_name} – farea", pad=8)
 
     # fline TS
     if not dfp_fl.empty:
@@ -682,13 +682,13 @@ def make_combo_over_evt(fid: str, df: pd.DataFrame, local2utc, utc2local,
 
 def make_combo_over_dem(fid: str, df: pd.DataFrame, local2utc, utc2local,
                         movies_dir: Path, fire_name: str, cube_dirs: dict):
-    dem_path = cube_dirs["fuel_topo"] / "dem.tif"
+    dem_path = cube_dirs["veg_fm_topo"] / "elev2020.tif"
     spread_dir = cube_dirs["fire_spread"]
     fline_path = spread_dir / "fline.tif"
-    fperim_path = spread_dir / "fperim.tif"
+    fperim_path = spread_dir / "farea.tif"
 
     if not (dem_path.exists() and fline_path.exists() and fperim_path.exists()):
-        print("[skip] combo DEM: missing one of DEM/fline/fperim rasters")
+        print("[skip] combo DEM: missing one of DEM/fline/farea rasters")
         return
 
     dem, (l, b, r, t), (dx, dy) = read_raster(dem_path, single_band=True)
@@ -705,10 +705,10 @@ def make_combo_over_dem(fid: str, df: pd.DataFrame, local2utc, utc2local,
         d = df[cols].dropna(subset=[var]).copy()
         return d, area_col
 
-    dfp_fp, area_fp = prep_df("fperim")
+    dfp_fp, area_fp = prep_df("farea")
     dfp_fl, area_fl = prep_df("fline")
     if dfp_fp.empty and dfp_fl.empty:
-        print("[skip] combo DEM: both fperim and fline time series empty")
+        print("[skip] combo DEM: both farea and fline time series empty")
         return
 
     spans = []
@@ -752,10 +752,10 @@ def make_combo_over_dem(fid: str, df: pd.DataFrame, local2utc, utc2local,
     # fperim TS
     if not dfp_fp.empty:
         ax_fp_ts.set_axisbelow(True); ax_fp_ts.grid(True, linestyle=":", alpha=0.4, zorder=0)
-        ax_fp_ts.step(dfp_fp["Local"], dfp_fp["fperim"], where="post", linewidth=2.0, zorder=3)
-        vc = dfp_fp["fperim"].ne(dfp_fp["fperim"].shift())
-        ax_fp_ts.scatter(dfp_fp.loc[vc, "Local"], dfp_fp.loc[vc, "fperim"], color="black", zorder=4, s=30)
-        k_fp = infer_km2_per_pixel(dfp_fp, "fperim", area_fp, dx, dy)
+        ax_fp_ts.step(dfp_fp["Local"], dfp_fp["farea"], where="post", linewidth=2.0, zorder=3)
+        vc = dfp_fp["farea"].ne(dfp_fp["farea"].shift())
+        ax_fp_ts.scatter(dfp_fp.loc[vc, "Local"], dfp_fp.loc[vc, "farea"], color="black", zorder=4, s=30)
+        k_fp = infer_km2_per_pixel(dfp_fp, "farea", area_fp, dx, dy)
         if k_fp and np.isfinite(k_fp) and k_fp > 0:
             y2 = ax_fp_ts.secondary_yaxis('right', functions=(lambda y: y * k_fp, lambda y: y / k_fp))
             y2.set_ylabel("Area (km²)", labelpad=8)
@@ -767,7 +767,7 @@ def make_combo_over_dem(fid: str, df: pd.DataFrame, local2utc, utc2local,
         sL, eL = dfp_fp["Local"].iloc[[0, -1]]
         ax_fp_ts.set_xlabel(f"Local — {sL:%b %d %H:%M} → {eL:%b %d %H:%M}", labelpad=8)
         ax_fp_ts.set_ylabel("Number of pixels", labelpad=6)
-        ax_fp_ts.set_title(f"{fire_name} – fperim", pad=8)
+        ax_fp_ts.set_title(f"{fire_name} – farea", pad=8)
 
     # fline TS
     if not dfp_fl.empty:
