@@ -284,6 +284,22 @@ def _aspect_circ_mean_from(tif_path: Path) -> Optional[float]:
             return None
         return float(np.nanmean(band_means))
 
+def _get_generic_variable_name(var):
+    if ('f40' in var or 'fm40' in var):
+        return 'fbfm40'
+    if ('f13' in var or 'fm13' in var):
+        return 'fbfm13'
+    if 'evt' in var:
+        return 'evt'
+    if 'roads' in var:
+        return 'roads'
+    if 'asp' in var:
+        return 'asp'
+    if 'slpd' in var:
+        return 'slpd'
+    if 'elev' in var:
+        return 'elev'
+    return var
 
 def build_table(fid: str) -> Path:
     """
@@ -303,18 +319,6 @@ def build_table(fid: str) -> Path:
     fire_name_slug = _slugify(fire_name_raw)
     center_lat = float((row.get("lat0") + row.get("lat1")) / 2.0)
     center_lon = float((row.get("lon0") + row.get("lon1")) / 2.0)
-
-    '''
-    gdf_fperim_rd, _, _ = feds_util.read_1fire(fid)
-    if gdf_fperim_rd is None:
-        raise FileNotFoundError(f"FEDS file for fire {fid} does not exist and firelist has no times.")
-    df_t = pd.to_datetime(gdf_fperim_rd.t)
-    df_t_with_buffer = proc_util.add_time_buffers(df_t)
-    conversion_delta = pd.to_timedelta(1, unit="hours") - pd.to_timedelta(round(center_lon / 15), unit="hours")
-    df_t_with_buffer_utc = df_t_with_buffer + conversion_delta
-    fire_start_utc = pd.Timestamp(df_t_with_buffer_utc.min().normalize())
-    fire_end_utc = pd.Timestamp(df_t_with_buffer_utc.max().normalize()) + pd.Timedelta(hours=23)
-    '''
 
     cubes_dir = Path(gen_util.dir_output) / gen_util.dir_cubes / fid
 
@@ -438,10 +442,11 @@ def build_table(fid: str) -> Path:
         if var in skip_vars:
             continue
         s, s_area = _series_from_stack(var, folder)
+        var_name = _get_generic_variable_name(var)
         if s is not None:
-            df[var] = s.reindex(df.index)
+            df[var_name] = s.reindex(df.index)
         if s_area is not None:
-            df[f"{var}_area_km2"] = s_area.reindex(df.index)
+            df[f"{var_name}_area_km2"] = s_area.reindex(df.index)
 
     # Derived variables from climate
     if {"t2m", "d2m"}.issubset(df.columns):
