@@ -56,9 +56,9 @@ The below list shows the spatial and temporal resolutions of data stored in each
 - Temporal resolution: Static
 - Layers:
   - `cbd`: Canopy bulk density (100 kg/m³)
-  - `cbh`: Canopy base height (10 m)
+  - `cbh`: Canopy base height (m * 10)
   - `cc`: Canopy cover (Percent, %)
-  - `ch`: Canopy height (10 m)
+  - `ch`: Canopy height (m * 10)
 
 #### `veg_fm_topo`
 - Spatial resolution: 30 m
