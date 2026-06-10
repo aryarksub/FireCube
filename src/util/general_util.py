@@ -179,9 +179,6 @@ def get_out_batch_for_tif(tif):
     # FEDS/FRP variables have their own batch ("fire spread")
     elif subdir_feds in tif:
         return subdir_firespread
-    # FRP variables have their own batch ("frp")
-    # elif subdir_frp in tif:
-    #     return subdir_frp
     # All other variables are not supported
     else:
         print(f'Resolution + Var combination for file {tif} is not supported')

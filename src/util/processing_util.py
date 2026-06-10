@@ -191,7 +191,6 @@ def resample_tif(in_tif, out_tif, target_res=None, catype=False):
     Raises:
         ValueError: Occurs if the input TIF file has a non-projected CRS
     """
-    # print(f"Resampling {in_tif} to {out_tif} with target resolution {target_res} and catype={catype}")
     resampling = Resampling.nearest if catype else Resampling.bilinear
 
     with rasterio.open(in_tif) as src:
@@ -370,8 +369,6 @@ def convert_null_values_to_nan(in_tif, out_tif=None, null_values=[GLOBAL_NULL_VA
     with rasterio.open(in_tif) as src:
         data = src.read()  # Read as (bands, rows, cols)
         meta = src.meta.copy()
-
-        # print(in_tif, data.shape)
 
         # Include raster's built-in nodata value if present
         if src.nodata is not None:

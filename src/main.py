@@ -58,9 +58,6 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     # Add time-buffer to DataFrame
     df_t_with_buffer = proc_util.add_time_buffers(df_t)
 
-    # print('Original fire start/end', df_t.min(), df_t.max())
-    # print('Buffered fire start/end', df_t_with_buffer.min(), df_t_with_buffer.max())
-
     # Convert gdf_farea to EPSG:5070
     gdf_farea_5070 = gdf_farea_rd.to_crs('EPSG:5070') 
     bounds_5070 = gdf_farea_5070.total_bounds
@@ -76,13 +73,9 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     conversion_delta = pd.to_timedelta(1, unit="hours") - pd.to_timedelta(round(center_lon / 15), unit="hours")
     df_t_with_buffer = df_t_with_buffer + conversion_delta
 
-    # print('Buffered fire start/end after LST to UTC conversion', df_t_with_buffer.min(), df_t_with_buffer.max())
-
     fire_start = pd.Timestamp(df_t_with_buffer.min().normalize())
     fire_end = pd.Timestamp(df_t_with_buffer.max().normalize()) + pd.Timedelta(hours=23)
     fire_hours = int( (fire_end - fire_start).total_seconds() / 3600)
-
-    # print('Fire start/end after normalization + num hours', fire_start, fire_end, fire_hours)
 
     # ERA5 download
     if len(era5_vars) != 0:
@@ -125,11 +118,6 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     # The output TIFs here are post-processing and may not exist if the fire is being processed for the first time
     post_proc_non_feds_output_tifs = gen_util.get_all_tifs_in_output_dir_for_fire(fid)
 
-    # print(len(non_feds_input_tifs), len(pre_proc_non_feds_output_tifs), len(post_proc_non_feds_output_tifs))
-    # print('INPUT', non_feds_input_tifs)
-    # print('PRE-PROC', pre_proc_non_feds_output_tifs)
-    # print('POST-PROC', post_proc_non_feds_output_tifs)
-
     # If no output TIFs do not exist, stop processing (there is an issue)
     if len(post_proc_non_feds_output_tifs) == 0 and len(pre_proc_non_feds_output_tifs) == 0:
         if verbose:
@@ -146,14 +134,8 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
     
     non_feds_output_tifs = list(set(non_feds_output_tifs).union(set(post_proc_non_feds_output_tifs)))
 
-    # print(len(non_feds_output_tifs), non_feds_output_tifs)
-
     # Bounding box for all variable/layer tifs is the same, so we can just take the box for the first tif
     largest_var_tif_bounds = proc_util.get_tif_bounds(non_feds_output_tifs[0])
-
-    # print('BOUNDS 5070:', bounds_5070)
-    # for var_tif in non_feds_output_tifs:
-    #     print(proc_util.get_tif_bounds(var_tif))
 
     # FEDS + FRP download/rasterization
     if do_feds:
@@ -176,7 +158,6 @@ def process_single_fire(fid, era5_vars=[], do_pyr=True, lf_vars=[], do_feds=True
 
     # Convert all null values (-1/-9999) to np.nan
     for var_tif in all_variable_output_tifs:
-        # print(f'Processing variable TIF: {var_tif}')
         # If the output file does not exist, just skip it
         try:
             # phi values are allowed to be -1, but this is considered null data for other variables
@@ -394,11 +375,11 @@ if __name__=='__main__':
 
     # To skip ERA5 download, set era5_vars = []
     era5_vars = ['surface_pressure', 'total_precipitation', '2m_temperature', '2m_dewpoint_temperature']
-    # To skip Pyregence download, set do_pyr = False
+    # To skip Pyregence download, set get_pyr_data = False
     get_pyr_data = True
     # To skip LANDFIRE download, set lf_vars = []
     lf_vars = ['ASP', 'ELEV', 'SLPD', 'EVT', 'FBFM13', 'FBFM40', 'ROADS']
-    # To skip FEDS rasterization, set do_feds = False
+    # To skip FEDS rasterization, set rasterize_feds = False
     rasterize_feds = True
     # To skip plotting, set plot_sources = []
     plot_sources = []
@@ -410,7 +391,7 @@ if __name__=='__main__':
     if do_sample_fids:
         fids_to_use = random_select_fids(n=1, min_size=1000, size_threshold=2000000, duration_threshold=150, method='random')
     else:
-        fids_to_use = [temp_id] #existing_fids
+        fids_to_use = [temp_id]
     
     # Standard procedure is to use del_sources=gen_util.data_sources to delete temporary created data files
     process_multiple_fires(

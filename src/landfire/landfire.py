@@ -62,7 +62,6 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
     # Submit request to get data and retrieve corresponding job ID
     submit_response = requests.post(LF_JOB_URL, json=job_payload, timeout=120)
     submit_data = submit_response.json()
-    # print(submit_data)
     job_id = submit_data.get("jobId")
     status_payload = {
         "JobId": job_id
@@ -74,27 +73,12 @@ def download_landfire_data(bounds, out_file='temp.zip', email="a@a.com", layers=
         time.sleep(10) 
         status_response = requests.post(LF_STATUS_URL, json=status_payload, timeout=120)
         status_data = status_response.json()
-        # print(status_data)
         status = status_data.get("status")
 
     # If job succeeds, download the data from the URL specified in job response
     if status == "Succeeded":
         download_url = status_data['outputFile']
         if download_url:
-            # # New method: Use streaming download with explicit chunking for large files
-            # try:
-            #     with requests.get(download_url, stream=True, timeout=600) as r:
-            #         r.raise_for_status()
-            #         with open(out_file, "wb") as f:
-            #             for chunk in r.iter_content(chunk_size=8192):
-            #                 if chunk:
-            #                     f.write(chunk)
-            #     return True
-            # except Exception as e:
-            #     print(f"Error downloading LANDFIRE data: {e}")
-            #     return False
-            
-            # Old method (maybe had issues with chunking large files repeatedly?)
             result_response = requests.get(download_url, timeout=600)
             with open(out_file, "wb") as f:
                 f.write(result_response.content)
