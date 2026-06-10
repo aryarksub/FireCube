@@ -1,6 +1,6 @@
 # PyroStack
 
-Code used to generate the PyroStack wildfire trajectory dataset. For a detailed description of actual PyroStack contents, view `PyroStack_README.md`.
+Code used to generate the PyroStack wildfire trajectory dataset. For a detailed description of the PyroStack dataset's contents, view `Dataset_README.md`.
 
 ## Setup
 
